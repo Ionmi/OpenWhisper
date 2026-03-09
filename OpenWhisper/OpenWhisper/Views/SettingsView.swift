@@ -721,69 +721,108 @@ struct LLMSettingsTab: View {
 
             Section("Models") {
                 ForEach(LLMModelManager.recommendedModels) { model in
-                    let isDownloaded = appState.llmModelManager?.availableLocalModels.contains(model.filename) == true
-                    let isActive = llmSettings.selectedLocalModel == model.filename
+                    let isActive = llmSettings.selectedLocalModel == model.huggingFaceID
+                        && appState.isLLMLoaded
+                    let isCached = appState.llmModelManager?.isModelCached(model.huggingFaceID) == true
                     let isRecommended = model.id == MachineProfile.current.recommendedModelID
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 4) {
-                                Text(model.name)
-                                    .fontWeight(.medium)
-                                if isActive {
-                                    Text("Active")
-                                        .font(.caption2)
-                                        .padding(.horizontal, 5)
-                                        .padding(.vertical, 1)
-                                        .background(.green.opacity(0.15), in: Capsule())
-                                        .foregroundStyle(.green)
+                    let isDownloadingThis = appState.llmModelManager?.isDownloading == true
+                        && appState.llmModelManager?.downloadingModelID == model.huggingFaceID
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 4) {
+                                    Text(model.name)
+                                        .fontWeight(.medium)
+                                    if isActive {
+                                        Text("Active")
+                                            .font(.caption2)
+                                            .padding(.horizontal, 5)
+                                            .padding(.vertical, 1)
+                                            .background(.green.opacity(0.15), in: Capsule())
+                                            .foregroundStyle(.green)
+                                    }
+                                    if isRecommended {
+                                        Text("Recommended")
+                                            .font(.caption2)
+                                            .padding(.horizontal, 5)
+                                            .padding(.vertical, 1)
+                                            .background(.blue.opacity(0.15), in: Capsule())
+                                            .foregroundStyle(.blue)
+                                    }
                                 }
-                                if isRecommended {
-                                    Text("Recommended")
-                                        .font(.caption2)
-                                        .padding(.horizontal, 5)
-                                        .padding(.vertical, 1)
-                                        .background(.blue.opacity(0.15), in: Capsule())
-                                        .foregroundStyle(.blue)
+                                HStack(spacing: 4) {
+                                    Text("\(model.size) — \(model.languages) — \(model.license)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    if isRecommended {
+                                        Text("~\(MachineProfile.current.estimatedTokensPerSec(modelSizeGB: model.sizeGB)) tok/s")
+                                            .font(.caption)
+                                            .foregroundStyle(.blue)
+                                    }
                                 }
                             }
-                            HStack(spacing: 4) {
-                                Text("\(model.size) — \(model.languages) — \(model.license)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                if isRecommended {
-                                    Text("~\(MachineProfile.current.estimatedTokensPerSec(modelSizeGB: model.sizeGB)) tok/s")
+                            Spacer()
+                            if isDownloadingThis {
+                                HStack(spacing: 6) {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                    Text(appState.llmModelManager?.statusMessage ?? "")
                                         .font(.caption)
-                                        .foregroundStyle(.blue)
+                                        .foregroundStyle(.secondary)
+                                }
+                            } else {
+                                HStack(spacing: 8) {
+                                    if isCached {
+                                        Button(role: .destructive) {
+                                            deleteModel(model.huggingFaceID)
+                                        } label: {
+                                            Image(systemName: "trash")
+                                        }
+                                        .buttonStyle(.borderless)
+                                        .help("Delete cached model")
+                                    }
+                                    if isActive {
+                                        Button("Loaded") {}
+                                            .controlSize(.small)
+                                            .disabled(true)
+                                    } else if isCached {
+                                        Button("Load") {
+                                            guard let mlx = appState.mlxLLMAdapter else { return }
+                                            Task {
+                                                do {
+                                                    try await appState.llmModelManager?.loadCached(model, using: mlx)
+                                                    llmSettings.selectedLocalModel = model.huggingFaceID
+                                                    appState.isLLMLoaded = true
+                                                    appState.updateLLMConfiguration()
+                                                } catch {
+                                                    appState.errorMessage = "Failed to load model: \(error.localizedDescription)"
+                                                }
+                                            }
+                                        }
+                                        .controlSize(.small)
+                                        .disabled(appState.llmModelManager?.isDownloading == true)
+                                    } else {
+                                        Button("Download") {
+                                            guard let mlx = appState.mlxLLMAdapter else { return }
+                                            Task {
+                                                do {
+                                                    try await appState.llmModelManager?.download(model, using: mlx)
+                                                } catch {
+                                                    appState.errorMessage = "Download failed: \(error.localizedDescription)"
+                                                }
+                                            }
+                                        }
+                                        .controlSize(.small)
+                                        .disabled(appState.llmModelManager?.isDownloading == true)
+                                    }
                                 }
                             }
                         }
-                        Spacer()
-                        if isDownloaded {
-                            Button(role: .destructive) {
-                                deleteModel(model.filename)
-                            } label: {
-                                Image(systemName: "trash")
-                            }
-                            .buttonStyle(.borderless)
-                            .help("Delete model")
-                        } else {
-                            Button("Download") {
-                                Task {
-                                    try? await appState.llmModelManager?.downloadModel(model)
-                                }
-                            }
-                            .controlSize(.small)
-                            .disabled(appState.llmModelManager?.isDownloading == true)
+                        if isDownloadingThis {
+                            ProgressView(value: appState.llmModelManager?.downloadProgress ?? 0)
+                                .progressViewStyle(.linear)
                         }
                     }
-                }
-
-                if appState.llmModelManager?.isDownloading == true {
-                    ProgressView(value: appState.llmModelManager?.downloadProgress ?? 0)
-                        .progressViewStyle(.linear)
-                    Text("Downloading... \(Int((appState.llmModelManager?.downloadProgress ?? 0) * 100))%")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -801,60 +840,24 @@ struct LLMSettingsTab: View {
                 }
 
                 if llmSettings.source == .local {
-                    Section("Local Model") {
-                        if let manager = appState.llmModelManager {
-                            if manager.availableLocalModels.isEmpty {
-                                Label("No models downloaded yet. Download one above.", systemImage: "arrow.down.circle")
-                                    .font(.callout)
-                                    .foregroundStyle(.secondary)
-                            } else {
-                                if manager.availableLocalModels.count == 1 {
-                                    // Single model — just show it, auto-select
-                                    let model = manager.availableLocalModels[0]
-                                    LabeledContent("Model") {
-                                        Text(model)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    .onAppear {
-                                        if llmSettings.selectedLocalModel != model {
-                                            llmSettings.selectedLocalModel = model
-                                            Task { await appState.loadLocalLLMModel(model) }
-                                        }
-                                    }
-                                } else {
-                                    Picker("Model", selection: $llmSettings.selectedLocalModel) {
-                                        ForEach(manager.availableLocalModels, id: \.self) { model in
-                                            Text(model).tag(model)
-                                        }
-                                    }
-                                    .onChange(of: llmSettings.selectedLocalModel) {
-                                        if !llmSettings.selectedLocalModel.isEmpty {
-                                            Task {
-                                                await appState.loadLocalLLMModel(llmSettings.selectedLocalModel)
-                                            }
-                                        }
-                                    }
-                                    .onAppear {
-                                        if llmSettings.selectedLocalModel.isEmpty,
-                                           let first = manager.availableLocalModels.first {
-                                            llmSettings.selectedLocalModel = first
-                                            Task { await appState.loadLocalLLMModel(first) }
-                                        }
-                                    }
-                                }
-
-                                // Status
-                                if appState.localLLMAdapter?.isModelLoaded == true {
-                                    Label("Loaded", systemImage: "checkmark.circle.fill")
-                                        .font(.caption)
-                                        .foregroundStyle(.green)
-                                } else {
-                                    Label("Loading model...", systemImage: "arrow.trianglehead.2.clockwise")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
+                    Section("Local Model (MLX)") {
+                        if appState.isLLMLoaded {
+                            Label("Loaded: \(llmSettings.selectedLocalModel.components(separatedBy: "/").last ?? llmSettings.selectedLocalModel)", systemImage: "checkmark.circle.fill")
+                                .font(.caption)
+                                .foregroundStyle(.green)
+                        } else if !llmSettings.selectedLocalModel.isEmpty {
+                            Label("Loading model...", systemImage: "arrow.trianglehead.2.clockwise")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Label("No model selected. Choose one above.", systemImage: "arrow.up.circle")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
                         }
+
+                        Text("MLX models run natively on Apple Silicon with Metal acceleration.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 } else {
                     Section("Remote API") {
@@ -877,19 +880,13 @@ struct LLMSettingsTab: View {
         .formStyle(.grouped)
     }
 
-    private func deleteModel(_ filename: String) {
-        // If this is the active model, unload it first
-        if appState.llmSettings.selectedLocalModel == filename {
-            appState.localLLMAdapter?.unloadModel()
+    private func deleteModel(_ huggingFaceID: String) {
+        if appState.llmSettings.selectedLocalModel == huggingFaceID {
+            appState.mlxLLMAdapter?.unloadModel()
+            appState.isLLMLoaded = false
             appState.llmSettings.selectedLocalModel = ""
         }
-        try? appState.llmModelManager?.deleteModel(filename)
-        // Auto-select remaining model if only one left
-        if let remaining = appState.llmModelManager?.availableLocalModels,
-           remaining.count == 1, let only = remaining.first {
-            appState.llmSettings.selectedLocalModel = only
-            Task { await appState.loadLocalLLMModel(only) }
-        }
+        try? appState.llmModelManager?.deleteModel(huggingFaceID)
     }
 }
 

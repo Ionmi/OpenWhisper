@@ -166,6 +166,7 @@ struct MenuBarView: View {
         case .idle: .green
         case .recording: .red
         case .transcribing: .orange
+        case .processing: .purple
         }
     }
 
@@ -180,6 +181,7 @@ struct MenuBarView: View {
         case .idle: "Ready"
         case .recording: "Recording…"
         case .transcribing: "Transcribing…"
+        case .processing: "Processing…"
         }
     }
 }

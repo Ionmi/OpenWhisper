@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 @Observable
 final class LLMSettings {
@@ -49,7 +50,7 @@ final class LLMSettings {
             source = stored.source
             selectedLocalModel = stored.selectedLocalModel
             remoteBaseURL = stored.remoteBaseURL
-            remoteAPIKey = stored.remoteAPIKey
+            remoteAPIKey = KeychainHelper.load() ?? ""
             remoteModelName = stored.remoteModelName
         } else {
             isEnabled = false
@@ -67,9 +68,63 @@ final class LLMSettings {
             source: source,
             selectedLocalModel: selectedLocalModel,
             remoteBaseURL: remoteBaseURL,
-            remoteAPIKey: remoteAPIKey,
+            remoteAPIKey: "",
             remoteModelName: remoteModelName
         )
         JSONStorageAdapter.save(storage, to: "llm-settings.json")
+        KeychainHelper.save(remoteAPIKey)
+    }
+}
+
+// MARK: - Keychain Helper
+
+private enum KeychainHelper {
+    private static let service = "me.OpenWhisper.llm-api-key"
+    private static let account = "remoteAPIKey"
+
+    static func save(_ value: String) {
+        guard let data = value.data(using: .utf8) else { return }
+
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+
+        let existing = SecItemCopyMatching(query as CFDictionary, nil)
+
+        if existing == errSecSuccess {
+            let updates: [String: Any] = [kSecValueData as String: data]
+            SecItemUpdate(query as CFDictionary, updates as CFDictionary)
+        } else {
+            var addQuery = query
+            addQuery[kSecValueData as String] = data
+            SecItemAdd(addQuery as CFDictionary, nil)
+        }
+    }
+
+    static func load() -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+
+        guard status == errSecSuccess, let data = result as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    static func delete() {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        SecItemDelete(query as CFDictionary)
     }
 }

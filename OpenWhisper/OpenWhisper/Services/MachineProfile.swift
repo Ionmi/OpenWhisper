@@ -56,11 +56,11 @@ struct MachineProfile: Sendable {
         case .low:
             return "gemma3n-e2b"
         case .medium:
-            return totalRAMGB < 16 ? "gemma3n-e2b" : "qwen3.5-2b"
+            return totalRAMGB < 16 ? "gemma3n-e2b" : "qwen3-1.7b"
         case .high:
-            return totalRAMGB < 16 ? "qwen3.5-2b" : "qwen3.5-4b"
+            return totalRAMGB < 16 ? "qwen3-1.7b" : "qwen3-4b"
         case .veryHigh, .extreme:
-            return "qwen3.5-4b"
+            return "qwen3-4b"
         }
     }
 

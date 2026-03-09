@@ -22,11 +22,29 @@ final class VoiceProcessingAudioCapture: AudioCapturePort {
 
         let inputNode = audioEngine.inputNode
 
-        // Enable voice processing (AEC + noise suppression)
-        try inputNode.setVoiceProcessingEnabled(true)
+        // Reference the output node so the engine knows about both I/O endpoints.
+        // VPIO is a bidirectional unit and needs the output path to exist.
+        _ = audioEngine.outputNode
+        audioEngine.mainMixerNode.outputVolume = 0
+
+        // Enable voice processing (AEC + noise suppression).
+        // Must happen BEFORE reading inputNode format — VPIO changes it.
+        do {
+            try inputNode.setVoiceProcessingEnabled(true)
+
+            // Disable audio ducking — VPIO ducks other apps by default
+            inputNode.voiceProcessingOtherAudioDuckingConfiguration = .init(
+                enableAdvancedDucking: false,
+                duckingLevel: .min
+            )
+        } catch {
+            #if DEBUG
+            print("[VoiceProcessingAudioCapture] Voice processing unavailable, using standard capture: \(error)")
+            #endif
+        }
 
         let inputFormat = inputNode.outputFormat(forBus: 0)
-        guard inputFormat.sampleRate > 0 else {
+        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
             throw AudioCaptureError.noInputDevice
         }
 
@@ -64,6 +82,7 @@ final class VoiceProcessingAudioCapture: AudioCapturePort {
             }
 
             guard status != .error, error == nil,
+                convertedBuffer.frameLength > 0,
                 let channelData = convertedBuffer.floatChannelData
             else { return }
 
@@ -98,6 +117,11 @@ final class VoiceProcessingAudioCapture: AudioCapturePort {
         guard isRecording else { return [] }
         audioEngine.inputNode.removeTap(onBus: 0)
         audioEngine.stop()
+
+        // Disable voice processing so system audio volume returns to normal
+        try? audioEngine.inputNode.setVoiceProcessingEnabled(false)
+        audioEngine.reset()
+
         isRecording = false
 
         bufferLock.lock()

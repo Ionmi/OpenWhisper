@@ -32,20 +32,13 @@ final class LLMTextProcessor {
         let dictEntries = dictionaryAdapter.load()
         let dictString = dictEntries.isEmpty ? "" : dictEntries.map { "\($0.from)->\($0.to)" }.joined(separator: ",")
 
-        let systemPrompt = Self.buildSystemPrompt(language: language, tone: tone, dictionaryTerms: dictString)
+        let systemPrompt = Self.buildSystemPrompt(tone: tone, dictionaryTerms: dictString)
         let result = try await llm.generate(systemPrompt: systemPrompt, userPrompt: text)
         return result.isEmpty ? text : result
     }
 
-    static func buildSystemPrompt(language: String, tone: String, dictionaryTerms: String) -> String {
-        // Minimal prompt — fewer tokens = faster inference on small models.
-        // /no_think disables chain-of-thought on Qwen/DeepSeek models.
-        let lang = switch language {
-        case "es": "español"
-        case "en": "English"
-        default: language
-        }
-        let dict = dictionaryTerms.isEmpty ? "" : " Terms:\(dictionaryTerms)."
-        return "/no_think\nFix dictated \(lang) text. Tone:\(tone). Fix grammar, remove false starts/repetitions/self-corrections. Keep meaning, don't translate.\(dict) Output ONLY corrected text."
+    static func buildSystemPrompt(tone: String = "neutral", dictionaryTerms: String = "") -> String {
+        let dict = dictionaryTerms.isEmpty ? "" : " Use these terms:\(dictionaryTerms)."
+        return "Fix dictated text with minimal changes. Only fix grammar, remove false starts and self-corrections. Keep the original words and structure. Tone:\(tone).\(dict) Reply with ONLY the fixed text."
     }
 }

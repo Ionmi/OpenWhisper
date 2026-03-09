@@ -5,7 +5,7 @@ struct FillerConfig: Codable {
 
     static let `default` = FillerConfig(fillersByLanguage: [
         "es": ["eh", "um", "ah", "bueno", "o sea", "pues", "a ver", "digamos", "este", "vale vale", "entonces", "sabes"],
-        "en": ["um", "uh", "like", "you know", "I mean", "sort of", "kind of", "basically", "actually", "right"],
+        "en": ["um", "uh", "you know", "I mean", "sort of", "kind of"],
         "fr": ["euh", "ben", "genre", "en fait", "du coup", "bah", "voila"],
         "de": ["ah", "ahm", "also", "halt", "sozusagen", "quasi", "na ja"],
         "it": ["eh", "ciao", "allora", "praticamente", "cioe", "insomma"],

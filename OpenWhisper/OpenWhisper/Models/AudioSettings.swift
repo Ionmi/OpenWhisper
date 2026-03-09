@@ -24,8 +24,8 @@ final class AudioSettings {
             noiseSuppressionEnabled = stored.noiseSuppressionEnabled
             vadEnabled = stored.vadEnabled
         } else {
-            aecEnabled = true
-            noiseSuppressionEnabled = true
+            aecEnabled = false
+            noiseSuppressionEnabled = false
             vadEnabled = true
         }
     }

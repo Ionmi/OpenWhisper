@@ -11,6 +11,7 @@ final class AppState {
     var isLoadingModel = false
     var modelLoadProgress: Double = 0
     var audioLevel: Float = 0
+    var isLLMLoaded = false
 
     /// Live preview text shown in the pill during recording
     var livePreviewText = ""
@@ -34,7 +35,7 @@ final class AppState {
     var voiceActivityDetector: (any VoiceActivityPort)?
     var appDetector: (any AppDetectionPort)?
     var llmModelManager: LLMModelManager?
-    var localLLMAdapter: LocalLLMAdapter?
+    var mlxLLMAdapter: MLXLLMAdapter?
     var remoteLLMAdapter: RemoteLLMAdapter?
     var llmAdapter: (any LLMPort)?
     var llmProcessor: LLMTextProcessor?
@@ -103,9 +104,9 @@ final class AppState {
         let audioSamples = audioCaptureService?.stopRecording() ?? []
         currentState = .transcribing
         livePreviewText = ""
-        floatingRecorder?.showConfirmation()
 
         guard !audioSamples.isEmpty else {
+            floatingRecorder?.showConfirmation()
             currentState = .idle
             streamedText = ""
             return
@@ -114,6 +115,11 @@ final class AppState {
         let language = settings.selectedLanguage
 
         Task {
+            defer {
+                streamedText = ""
+                currentState = .idle
+            }
+
             var finalText = streamedText
 
             // 1. Filter audio through VAD if enabled
@@ -144,8 +150,7 @@ final class AppState {
             finalText = Self.cleanTranscription(finalText)
 
             guard !finalText.isEmpty else {
-                streamedText = ""
-                currentState = .idle
+                floatingRecorder?.hide()
                 return
             }
 
@@ -159,25 +164,51 @@ final class AppState {
                 }
             }
 
-            // 5. Apply progressive LLM result if ready (computed during recording).
-            // No background replacement — user may submit text immediately after paste.
-            if llmSettings.isEnabled, llmAdapter?.isModelLoaded == true {
+            // 5. LLM refinement — use progressive result if ready, otherwise run synchronously.
+
+            if llmSettings.isEnabled, llmAdapter?.isModelLoaded == true, let llmProcessor {
                 let progressiveResult = progressiveRefinedText
-                let progressiveInputText = lastLLMInputText
                 lastLLMInputText = ""
                 progressiveRefinedText = ""
 
-                if !progressiveResult.isEmpty,
-                   progressiveResult != finalText,
-                   progressiveInputText == finalText {
+
+                if !progressiveResult.isEmpty, progressiveResult != finalText {
+
+                    currentState = .processing
+                    floatingRecorder?.showProcessing()
+                    try? await Task.sleep(for: .milliseconds(400))
                     finalText = progressiveResult
+                } else {
+                    // No progressive result — run LLM with a tight timeout.
+                    currentState = .processing
+                    floatingRecorder?.showProcessing()
+                    let textToRefine = finalText
+                    let refined: String? = await withTaskGroup(of: String?.self) { group in
+                        group.addTask {
+                            try? await llmProcessor.process(textToRefine, language: language)
+                        }
+                        group.addTask {
+                            try? await Task.sleep(for: .seconds(3))
+                            return nil
+                        }
+                        for await result in group {
+                            group.cancelAll()
+                            return result
+                        }
+                        return nil
+                    }
+                    if let refined, !refined.isEmpty {
+                        finalText = refined
+                    }
                 }
             } else {
+
                 lastLLMInputText = ""
                 progressiveRefinedText = ""
             }
 
-            // 6. Output
+            // 6. Output — show confirmation now that all processing is done
+            floatingRecorder?.showConfirmation()
             let result = TranscriptionResult(
                 text: finalText,
                 timestamp: Date(),
@@ -199,9 +230,6 @@ final class AppState {
             }
 
             autoDictionaryService?.startMonitoring(transcribedText: finalText)
-
-            streamedText = ""
-            currentState = .idle
         }
     }
 
@@ -233,7 +261,7 @@ final class AppState {
         let processor = textProcessor
         progressiveLLMTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(1.5))
+                try? await Task.sleep(for: .seconds(1.0))
                 guard !Task.isCancelled, let self else { return }
 
                 let rawText = self.streamedText
@@ -397,9 +425,12 @@ final class AppState {
         guard !isSetUp else { return }
         isSetUp = true
 
-        // Audio capture: always use standard capture (reliable).
-        // Voice processing (AEC + noise suppression) is experimental and disabled for now.
-        audioCaptureService = AudioCaptureService()
+        // Use voice processing (AEC + noise suppression) when enabled in settings
+        if audioSettings.aecEnabled || audioSettings.noiseSuppressionEnabled {
+            audioCaptureService = VoiceProcessingAudioCapture()
+        } else {
+            audioCaptureService = AudioCaptureService()
+        }
 
         textOutputService = TextOutputService()
         floatingRecorder = FloatingRecorderController(appState: self)
@@ -419,8 +450,8 @@ final class AppState {
         llmModelManager = LLMModelManager()
 
         // LLM adapters (both created, active one chosen by settings)
-        let local = LocalLLMAdapter()
-        localLLMAdapter = local
+        let mlx = MLXLLMAdapter()
+        mlxLLMAdapter = mlx
         let remote = RemoteLLMAdapter(
             baseURL: llmSettings.remoteBaseURL,
             apiKey: llmSettings.remoteAPIKey,
@@ -429,7 +460,7 @@ final class AppState {
         remoteLLMAdapter = remote
 
         // Select active adapter based on settings
-        let activeAdapter: any LLMPort = llmSettings.source == .remote ? remote : local
+        let activeAdapter: any LLMPort = llmSettings.source == .remote ? remote : mlx
         llmAdapter = activeAdapter
 
         // Load context modes from saved config (or use defaults)
@@ -442,29 +473,37 @@ final class AppState {
             dictionaryAdapter: dictionary
         )
 
-        // Auto-select model if none selected but models are available
-        if llmSettings.selectedLocalModel.isEmpty,
-           let manager = llmModelManager,
-           !manager.availableLocalModels.isEmpty {
-            let recommended = MachineProfile.current.recommendedModelID
-            let recommendedFilename = LLMModelManager.recommendedModels.first(where: { $0.id == recommended })?.filename
-            if let filename = recommendedFilename, manager.availableLocalModels.contains(filename) {
-                llmSettings.selectedLocalModel = filename
-            } else if let first = manager.availableLocalModels.first {
-                llmSettings.selectedLocalModel = first
+        // Auto-select model: prefer already cached, then recommended
+        if llmSettings.selectedLocalModel.isEmpty || llmModelManager?.isModelCached(llmSettings.selectedLocalModel) == false {
+            // Try to find a cached model
+            if let cached = LLMModelManager.recommendedModels.first(where: { llmModelManager?.isModelCached($0.huggingFaceID) == true }) {
+                llmSettings.selectedLocalModel = cached.huggingFaceID
+            } else if llmSettings.selectedLocalModel.isEmpty {
+                // Nothing cached — set recommended as default (will download on first use)
+                let recommended = MachineProfile.current.recommendedModelID
+                if let model = LLMModelManager.recommendedModels.first(where: { $0.id == recommended }) {
+                    llmSettings.selectedLocalModel = model.huggingFaceID
+                }
             }
         }
 
-        // Auto-load local LLM model if one is selected
-        if llmSettings.source == .local, !llmSettings.selectedLocalModel.isEmpty {
-            let modelPath = LLMModelManager.modelsDirectory.appendingPathComponent(llmSettings.selectedLocalModel)
-            if FileManager.default.fileExists(atPath: modelPath.path) {
-                let lang = settings.selectedLanguage
-                let tone = (JSONStorageAdapter.load(ContextModeConfig.self, from: "context-modes.json") ?? .default).defaultTone
-                Task {
-                    try? await local.loadModel(name: llmSettings.selectedLocalModel, path: modelPath)
-                    let warmUpPrompt = LLMTextProcessor.buildSystemPrompt(language: lang, tone: tone, dictionaryTerms: "")
-                    await local.warmUp(systemPrompt: warmUpPrompt)
+        // Auto-load cached MLX model on startup when LLM is enabled
+
+        if llmSettings.isEnabled,
+           llmSettings.source == .local,
+           !llmSettings.selectedLocalModel.isEmpty,
+           llmModelManager?.isModelCached(llmSettings.selectedLocalModel) == true {
+            let modelID = llmSettings.selectedLocalModel
+            let tone = (JSONStorageAdapter.load(ContextModeConfig.self, from: "context-modes.json") ?? .default).defaultTone
+            Task { @MainActor in
+                do {
+                    try await mlx.loadModel(huggingFaceID: modelID, progressHandler: nil)
+                    self.isLLMLoaded = true
+                    let warmUpPrompt = LLMTextProcessor.buildSystemPrompt(tone: tone)
+                    await mlx.warmUp(systemPrompt: warmUpPrompt)
+                } catch {
+                    self.isLLMLoaded = false
+                    self.errorMessage = "Failed to load LLM model: \(error.localizedDescription)"
                 }
             }
         }
@@ -529,12 +568,13 @@ final class AppState {
         )
 
         // Switch active adapter
-        let activeAdapter: any LLMPort
+        let activeAdapter: (any LLMPort)?
         if llmSettings.source == .remote {
-            activeAdapter = remoteLLMAdapter ?? localLLMAdapter!
+            activeAdapter = remoteLLMAdapter ?? mlxLLMAdapter
         } else {
-            activeAdapter = localLLMAdapter!
+            activeAdapter = mlxLLMAdapter
         }
+        guard let activeAdapter else { return }
         llmAdapter = activeAdapter
 
         // Rebuild processor with current context config
@@ -547,20 +587,18 @@ final class AppState {
         )
     }
 
-    /// Load a local LLM model by filename
-    func loadLocalLLMModel(_ filename: String) async {
-        guard let local = localLLMAdapter else { return }
-        let modelPath = LLMModelManager.modelsDirectory.appendingPathComponent(filename)
-        guard FileManager.default.fileExists(atPath: modelPath.path) else { return }
+    /// Load a local LLM model by HuggingFace ID
+    func loadLocalLLMModel(_ huggingFaceID: String) async {
+        guard let mlx = mlxLLMAdapter else { return }
+        isLLMLoaded = false
         do {
-            try await local.loadModel(name: filename, path: modelPath)
-            llmSettings.selectedLocalModel = filename
+            try await mlx.loadModel(huggingFaceID: huggingFaceID, progressHandler: nil)
+            llmSettings.selectedLocalModel = huggingFaceID
+            isLLMLoaded = true
             updateLLMConfiguration()
-            // Pre-warm KV cache
-            let language = settings.selectedLanguage
             let tone = (JSONStorageAdapter.load(ContextModeConfig.self, from: "context-modes.json") ?? .default).defaultTone
-            let warmUpPrompt = LLMTextProcessor.buildSystemPrompt(language: language, tone: tone, dictionaryTerms: "")
-            await local.warmUp(systemPrompt: warmUpPrompt)
+            let warmUpPrompt = LLMTextProcessor.buildSystemPrompt(tone: tone)
+            await mlx.warmUp(systemPrompt: warmUpPrompt)
         } catch {
             errorMessage = "Failed to load LLM: \(error.localizedDescription)"
         }

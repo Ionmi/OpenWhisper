@@ -6,7 +6,6 @@ final class HotkeyService {
     private var runLoopSource: CFRunLoopSource?
     private var keyCode: UInt16
     private var modifiers: UInt32
-    private var retainedSelf: Unmanaged<HotkeyService>?
 
     /// Whether the service is actively listening (recording mode is on).
     var isActive = false
@@ -25,10 +24,6 @@ final class HotkeyService {
 
     /// Threshold in seconds: press shorter than this → toggle, longer → hold.
     private let autoHoldThreshold: CFAbsoluteTime = 0.3
-
-    /// Maximum number of retries when event tap creation fails.
-    private static let maxRetries = 5
-    private var retryCount = 0
 
     var onActivate: (() -> Void)?
     var onConfirm: (() -> Void)?
@@ -50,18 +45,11 @@ final class HotkeyService {
 
     func start() {
         stop()
-        retryCount = 0
-        attemptStart()
-    }
 
-    private func attemptStart() {
         let eventMask: CGEventMask =
             (1 << CGEventType.keyDown.rawValue) |
             (1 << CGEventType.keyUp.rawValue) |
             (1 << CGEventType.flagsChanged.rawValue)
-
-        // Retain self for the event tap callback lifetime
-        let retained = Unmanaged.passRetained(self)
 
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
@@ -69,27 +57,20 @@ final class HotkeyService {
             options: .defaultTap,
             eventsOfInterest: eventMask,
             callback: hotkeyCallback,
-            userInfo: retained.toOpaque()
+            userInfo: Unmanaged.passUnretained(self).toOpaque()
         ) else {
-            // Release since tap creation failed
-            retained.release()
-
             if !AXIsProcessTrusted() {
                 #if DEBUG
                 print("[HotkeyService] Failed to create event tap — Accessibility permission not granted.")
                 #endif
                 onEventTapFailed?()
             }
-            retryCount += 1
-            if retryCount < Self.maxRetries {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
-                    guard let self, self.eventTap == nil else { return }
-                    self.attemptStart()
-                }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                guard let self, self.eventTap == nil else { return }
+                self.start()
             }
             return
         }
-        retainedSelf = retained
         onEventTapCreated?()
 
         eventTap = tap
@@ -110,9 +91,6 @@ final class HotkeyService {
         }
         eventTap = nil
         runLoopSource = nil
-        // Release the retained reference used by the event tap callback
-        retainedSelf?.release()
-        retainedSelf = nil
         isActive = false
         isHotkeyHeld = false
         autoResolvedToToggle = false
@@ -134,7 +112,6 @@ final class HotkeyService {
             if let tap = eventTap {
                 CGEvent.tapEnable(tap: tap, enable: true)
             }
-            // These are not real input events, just pass through
             return Unmanaged.passRetained(event)
         }
 
@@ -177,6 +154,12 @@ final class HotkeyService {
         let matchesKey = eventKeyCode == keyCode
         let matchesModifiers = event.flags.contains(requiredFlags)
 
+        // Consume auto-repeat events for the hotkey while recording,
+        // so they don't leak through to the focused app (e.g. typing spaces).
+        if isActive && isAutoRepeat && matchesKey && matchesModifiers {
+            return nil
+        }
+
         // Hold/Auto mode: detect key release of the hotkey
         let isHoldBehavior = shortcutMode == .hold || (shortcutMode == .auto && !autoResolvedToToggle)
         if isHoldBehavior && isActive && isHotkeyHeld {
@@ -218,9 +201,11 @@ final class HotkeyService {
         if type == .keyDown && matchesKey && matchesModifiers && !isAutoRepeat {
             if !isActive {
                 isHotkeyHeld = true
-                hotkeyPressTime = CFAbsoluteTimeGetCurrent()
                 autoResolvedToToggle = false
                 onActivate?()
+                // Set press time AFTER activation completes, so the auto-hold
+                // threshold isn't eaten by audio engine startup latency.
+                hotkeyPressTime = CFAbsoluteTimeGetCurrent()
             } else if shortcutMode == .toggle || (shortcutMode == .auto && autoResolvedToToggle) {
                 // Pressing hotkey again while active in toggle mode → confirm
                 autoResolvedToToggle = false

@@ -4,6 +4,7 @@ enum RecordingState {
     case idle
     case recording
     case transcribing
+    case processing
 }
 
 struct StatusIndicatorView: View {
@@ -19,6 +20,10 @@ struct StatusIndicatorView: View {
                 .foregroundStyle(.red)
         case .transcribing:
             Image(systemName: "ellipsis")
+        case .processing:
+            Image(systemName: "brain")
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(.purple)
         }
     }
 }

@@ -31,11 +31,9 @@ final class RemoteLLMAdapter: LLMPort, @unchecked Sendable {
     }
 
     func generate(systemPrompt: String, userPrompt: String) async throws -> String {
-        lock.lock()
-        let currentBaseURL = baseURL
-        let currentApiKey = apiKey
-        let currentModelName = modelName
-        lock.unlock()
+        let (currentBaseURL, currentApiKey, currentModelName) = lock.withLock {
+            (baseURL, apiKey, modelName)
+        }
 
         guard !currentBaseURL.isEmpty else {
             throw LLMError.modelNotLoaded

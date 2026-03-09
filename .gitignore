@@ -29,3 +29,6 @@ xcuserdata/
 # Environment
 .env
 .env.*
+
+# Agents
+CLAUDE.md
