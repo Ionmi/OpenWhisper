@@ -20,7 +20,7 @@ final class LocalLLMAdapter: LLMPort, @unchecked Sendable {
 
         let service = LlamaService(
             modelUrl: path,
-            config: .init(batchSize: 512, maxTokenCount: 2048, useGPU: true)
+            config: .init(batchSize: 512, maxTokenCount: 512, useGPU: true)
         )
 
         lock.lock()
@@ -52,6 +52,20 @@ final class LocalLLMAdapter: LLMPort, @unchecked Sendable {
         } catch {
             throw LLMError.generationFailed(error.localizedDescription)
         }
+    }
+
+    func warmUp(systemPrompt: String) async {
+        lock.lock()
+        let service = llamaService
+        lock.unlock()
+        guard let service else { return }
+        _ = try? await service.respond(
+            to: [
+                LlamaChatMessage(role: .system, content: systemPrompt),
+                LlamaChatMessage(role: .user, content: "test"),
+            ],
+            samplingConfig: .init(temperature: 0.1, seed: 42)
+        )
     }
 
     func unloadModel() {

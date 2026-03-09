@@ -34,6 +34,8 @@ final class AppState {
     var voiceActivityDetector: (any VoiceActivityPort)?
     var appDetector: (any AppDetectionPort)?
     var llmModelManager: LLMModelManager?
+    var localLLMAdapter: LocalLLMAdapter?
+    var remoteLLMAdapter: RemoteLLMAdapter?
     var llmAdapter: (any LLMPort)?
     var llmProcessor: LLMTextProcessor?
     var autoDictionaryService: AutoDictionaryService?
@@ -145,16 +147,9 @@ final class AppState {
                 if let processor = textProcessor {
                     finalText = processor.process(finalText, language: language)
                 }
-
-                // 5. LLM processing (if enabled)
-                if let llmProcessor, llmSettings.isEnabled {
-                    if let refined = try? await llmProcessor.process(finalText, language: language) {
-                        finalText = refined
-                    }
-                }
             }
 
-            // Save to history
+            // 5. Output immediately — don't wait for LLM
             let result = TranscriptionResult(
                 text: finalText,
                 timestamp: Date(),
@@ -166,7 +161,6 @@ final class AppState {
                 transcriptionHistory = Array(transcriptionHistory.prefix(50))
             }
 
-            // Output based on mode
             switch settings.outputMode {
             case .pasteAutomatic:
                 textOutputService?.pasteText(finalText)
@@ -176,11 +170,49 @@ final class AppState {
                 break
             }
 
-            // 6. Start monitoring for dictionary auto-add
             autoDictionaryService?.startMonitoring(transcribedText: finalText)
 
             streamedText = ""
             currentState = .idle
+
+            // 6. LLM refinement in background — replaces pasted text if it improves it
+            if let llmProcessor, llmSettings.isEnabled, llmAdapter?.isModelLoaded == true {
+                let textToRefine = finalText
+                let lang = language
+                let outputMode = settings.outputMode
+                Task.detached { [weak self] in
+                    guard let self,
+                          let refined = try? await llmProcessor.process(textToRefine, language: lang),
+                          !refined.isEmpty, refined != textToRefine
+                    else { return }
+                    await MainActor.run { [self] in
+                        // Update history with refined text
+                        if self.lastTranscription?.text == textToRefine {
+                            self.lastTranscription = TranscriptionResult(
+                                text: refined,
+                                timestamp: result.timestamp,
+                                duration: result.duration
+                            )
+                        }
+                        if let idx = self.transcriptionHistory.firstIndex(where: { $0.text == textToRefine }) {
+                            self.transcriptionHistory[idx] = TranscriptionResult(
+                                text: refined,
+                                timestamp: result.timestamp,
+                                duration: result.duration
+                            )
+                        }
+                        // Replace the already-pasted text
+                        switch outputMode {
+                        case .pasteAutomatic:
+                            self.textOutputService?.replaceText(old: textToRefine, with: refined)
+                        case .clipboardOnly:
+                            self.textOutputService?.copyToClipboard(refined)
+                        case .historyOnly:
+                            break
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -317,12 +349,9 @@ final class AppState {
         guard !isSetUp else { return }
         isSetUp = true
 
-        // Audio capture: use voice processing (AEC + noise suppression) if enabled
-        if audioSettings.aecEnabled || audioSettings.noiseSuppressionEnabled {
-            audioCaptureService = VoiceProcessingAudioCapture()
-        } else {
-            audioCaptureService = AudioCaptureService()
-        }
+        // Audio capture: always use standard capture (reliable).
+        // Voice processing (AEC + noise suppression) is experimental and disabled for now.
+        audioCaptureService = AudioCaptureService()
 
         textOutputService = TextOutputService()
         floatingRecorder = FloatingRecorderController(appState: self)
@@ -340,6 +369,44 @@ final class AppState {
         let detector = NSWorkspaceAppDetector()
         appDetector = detector
         llmModelManager = LLMModelManager()
+
+        // LLM adapters (both created, active one chosen by settings)
+        let local = LocalLLMAdapter()
+        localLLMAdapter = local
+        let remote = RemoteLLMAdapter(
+            baseURL: llmSettings.remoteBaseURL,
+            apiKey: llmSettings.remoteAPIKey,
+            modelName: llmSettings.remoteModelName
+        )
+        remoteLLMAdapter = remote
+
+        // Select active adapter based on settings
+        let activeAdapter: any LLMPort = llmSettings.source == .remote ? remote : local
+        llmAdapter = activeAdapter
+
+        // Load context modes from saved config (or use defaults)
+        let contextConfig = JSONStorageAdapter.load(ContextModeConfig.self, from: "context-modes.json") ?? .default
+
+        llmProcessor = LLMTextProcessor(
+            llm: activeAdapter,
+            appDetector: detector,
+            contextConfig: contextConfig,
+            dictionaryAdapter: dictionary
+        )
+
+        // Auto-load local LLM model if one is selected
+        if llmSettings.source == .local, !llmSettings.selectedLocalModel.isEmpty {
+            let modelPath = LLMModelManager.modelsDirectory.appendingPathComponent(llmSettings.selectedLocalModel)
+            if FileManager.default.fileExists(atPath: modelPath.path) {
+                let lang = settings.selectedLanguage
+                let tone = (JSONStorageAdapter.load(ContextModeConfig.self, from: "context-modes.json") ?? .default).defaultTone
+                Task {
+                    try? await local.loadModel(name: llmSettings.selectedLocalModel, path: modelPath)
+                    let warmUpPrompt = LLMTextProcessor.buildSystemPrompt(language: lang, tone: tone, dictionaryTerms: "")
+                    await local.warmUp(systemPrompt: warmUpPrompt)
+                }
+            }
+        }
 
         let autoDict = AutoDictionaryService()
         autoDict.configure(dictionaryAdapter: dictionary)
@@ -385,6 +452,57 @@ final class AppState {
     /// Call when shortcut mode changes in settings
     func updateShortcutMode() {
         hotkeyService?.shortcutMode = settings.shortcutMode
+    }
+
+    /// Call when LLM settings change (source, model, remote config)
+    func updateLLMConfiguration() {
+        guard let dictionary = dictionaryAdapter,
+              let detector = appDetector
+        else { return }
+
+        // Update remote adapter config
+        remoteLLMAdapter?.configure(
+            baseURL: llmSettings.remoteBaseURL,
+            apiKey: llmSettings.remoteAPIKey,
+            modelName: llmSettings.remoteModelName
+        )
+
+        // Switch active adapter
+        let activeAdapter: any LLMPort
+        if llmSettings.source == .remote {
+            activeAdapter = remoteLLMAdapter ?? localLLMAdapter!
+        } else {
+            activeAdapter = localLLMAdapter!
+        }
+        llmAdapter = activeAdapter
+
+        // Rebuild processor with current context config
+        let contextConfig = JSONStorageAdapter.load(ContextModeConfig.self, from: "context-modes.json") ?? .default
+        llmProcessor = LLMTextProcessor(
+            llm: activeAdapter,
+            appDetector: detector,
+            contextConfig: contextConfig,
+            dictionaryAdapter: dictionary
+        )
+    }
+
+    /// Load a local LLM model by filename
+    func loadLocalLLMModel(_ filename: String) async {
+        guard let local = localLLMAdapter else { return }
+        let modelPath = LLMModelManager.modelsDirectory.appendingPathComponent(filename)
+        guard FileManager.default.fileExists(atPath: modelPath.path) else { return }
+        do {
+            try await local.loadModel(name: filename, path: modelPath)
+            llmSettings.selectedLocalModel = filename
+            updateLLMConfiguration()
+            // Pre-warm KV cache
+            let language = settings.selectedLanguage
+            let tone = (JSONStorageAdapter.load(ContextModeConfig.self, from: "context-modes.json") ?? .default).defaultTone
+            let warmUpPrompt = LLMTextProcessor.buildSystemPrompt(language: language, tone: tone, dictionaryTerms: "")
+            await local.warmUp(systemPrompt: warmUpPrompt)
+        } catch {
+            errorMessage = "Failed to load LLM: \(error.localizedDescription)"
+        }
     }
 
     func loadTranscriptionEngine() async {

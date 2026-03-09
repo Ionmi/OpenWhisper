@@ -35,13 +35,13 @@ final class LLMTextProcessor {
         let dictString = dictEntries.map { "\($0.from) -> \($0.to)" }.joined(separator: ", ")
 
         // Build system prompt in the same language as input to prevent drift
-        let systemPrompt = Self.systemPrompt(language: language, tone: tone, dictionaryTerms: dictString)
+        let systemPrompt = Self.buildSystemPrompt(language: language, tone: tone, dictionaryTerms: dictString)
 
         let result = try await llm.generate(systemPrompt: systemPrompt, userPrompt: text)
         return result.isEmpty ? text : result
     }
 
-    private static func systemPrompt(language: String, tone: String, dictionaryTerms: String) -> String {
+    static func buildSystemPrompt(language: String, tone: String, dictionaryTerms: String) -> String {
         switch language {
         case "es":
             return """

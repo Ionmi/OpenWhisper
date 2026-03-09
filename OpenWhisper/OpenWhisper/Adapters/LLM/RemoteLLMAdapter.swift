@@ -4,8 +4,13 @@ final class RemoteLLMAdapter: LLMPort, @unchecked Sendable {
     private var baseURL: String
     private var apiKey: String
     private var modelName: String
+    private let lock = NSLock()
 
-    var isModelLoaded: Bool { !baseURL.isEmpty && !modelName.isEmpty }
+    var isModelLoaded: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return !baseURL.isEmpty && !modelName.isEmpty
+    }
 
     init(baseURL: String = "", apiKey: String = "", modelName: String = "") {
         self.baseURL = baseURL
@@ -18,26 +23,34 @@ final class RemoteLLMAdapter: LLMPort, @unchecked Sendable {
     }
 
     func configure(baseURL: String, apiKey: String, modelName: String) {
+        lock.lock()
         self.baseURL = baseURL
         self.apiKey = apiKey
         self.modelName = modelName
+        lock.unlock()
     }
 
     func generate(systemPrompt: String, userPrompt: String) async throws -> String {
-        guard !baseURL.isEmpty else {
+        lock.lock()
+        let currentBaseURL = baseURL
+        let currentApiKey = apiKey
+        let currentModelName = modelName
+        lock.unlock()
+
+        guard !currentBaseURL.isEmpty else {
             throw LLMError.modelNotLoaded
         }
 
-        let url = URL(string: "\(baseURL)/chat/completions")!
+        let url = URL(string: "\(currentBaseURL)/chat/completions")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        if !apiKey.isEmpty {
-            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        if !currentApiKey.isEmpty {
+            request.setValue("Bearer \(currentApiKey)", forHTTPHeaderField: "Authorization")
         }
 
         let body: [String: Any] = [
-            "model": modelName,
+            "model": currentModelName,
             "messages": [
                 ["role": "system", "content": systemPrompt],
                 ["role": "user", "content": userPrompt],
@@ -64,7 +77,15 @@ final class RemoteLLMAdapter: LLMPort, @unchecked Sendable {
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    func warmUp(systemPrompt: String) async {
+        // No-op for remote APIs
+    }
+
     func unloadModel() {
-        // No-op for remote
+        lock.lock()
+        baseURL = ""
+        apiKey = ""
+        modelName = ""
+        lock.unlock()
     }
 }
