@@ -59,12 +59,14 @@ final class LocalLLMAdapter: LLMPort, @unchecked Sendable {
         let service = llamaService
         lock.unlock()
         guard let service else { return }
+        // Send a minimal prompt to populate KV cache with system prompt tokens.
+        // Use "." as user input to minimize generation output.
         _ = try? await service.respond(
             to: [
                 LlamaChatMessage(role: .system, content: systemPrompt),
-                LlamaChatMessage(role: .user, content: "test"),
+                LlamaChatMessage(role: .user, content: "."),
             ],
-            samplingConfig: .init(temperature: 0.1, seed: 42)
+            samplingConfig: .init(temperature: 0.0, seed: 0)
         )
     }
 

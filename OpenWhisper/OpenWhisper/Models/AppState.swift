@@ -242,27 +242,43 @@ final class AppState {
     private func startProgressiveLLM() {
         guard llmSettings.isEnabled, llmAdapter?.isModelLoaded == true, let llmProcessor else { return }
 
+        let processor = textProcessor
         progressiveLLMTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1.5))
                 guard !Task.isCancelled, let self else { return }
 
-                let currentText = self.streamedText
+                let rawText = self.streamedText
                 let language = self.settings.selectedLanguage
 
-                guard !currentText.isEmpty,
-                      currentText.count > 10,
-                      currentText != self.lastLLMInputText,
+                guard !rawText.isEmpty,
+                      rawText.count > 10,
+                      rawText != self.lastLLMInputText,
                       !self.isProgressiveLLMRunning
                 else { continue }
 
                 self.isProgressiveLLMRunning = true
-                self.lastLLMInputText = currentText
+                self.lastLLMInputText = rawText
 
-                let refined = try? await llmProcessor.process(currentText, language: language)
+                // Apply same regex pipeline as confirmRecording (dictionary, fillers, punctuation)
+                // so the progressive result matches the final processed text.
+                var processedText = Self.cleanTranscription(rawText)
+                if let processor {
+                    processedText = processor.process(processedText, language: language)
+                }
+
+                guard !processedText.isEmpty, !Task.isCancelled else {
+                    self.isProgressiveLLMRunning = false
+                    continue
+                }
+
+                // Store processed text as the LLM input for comparison in confirmRecording
+                self.lastLLMInputText = processedText
+
+                let refined = try? await llmProcessor.process(processedText, language: language)
                 guard !Task.isCancelled else { return }
 
-                if let refined, !refined.isEmpty, refined != currentText {
+                if let refined, !refined.isEmpty, refined != processedText {
                     self.progressiveRefinedText = refined
                 }
                 self.isProgressiveLLMRunning = false

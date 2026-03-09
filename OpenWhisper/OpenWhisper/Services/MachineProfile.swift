@@ -9,7 +9,8 @@ struct MachineProfile: Sendable {
         case low        // ≤68 GB/s  (M1 base)
         case medium     // ~100 GB/s (M2/M3/M4 base)
         case high       // ~150-200 GB/s (Pro chips)
-        case veryHigh   // 273+ GB/s (M4 Pro, Max, Ultra)
+        case veryHigh   // 273+ GB/s (M4 Pro)
+        case extreme    // 400+ GB/s (Max, Ultra)
 
         var estimatedBandwidthGBs: Double {
             switch self {
@@ -17,6 +18,7 @@ struct MachineProfile: Sendable {
             case .medium:   return 100
             case .high:     return 200
             case .veryHigh: return 273
+            case .extreme:  return 400
             }
         }
     }
@@ -57,7 +59,7 @@ struct MachineProfile: Sendable {
             return totalRAMGB < 16 ? "gemma3n-e2b" : "qwen3.5-2b"
         case .high:
             return totalRAMGB < 16 ? "qwen3.5-2b" : "qwen3.5-4b"
-        case .veryHigh:
+        case .veryHigh, .extreme:
             return "qwen3.5-4b"
         }
     }
@@ -120,9 +122,9 @@ struct MachineProfile: Sendable {
     private static func classifyBandwidth(chipName: String) -> BandwidthTier {
         let lower = chipName.lowercased()
 
-        // Check for Ultra / Max first — always veryHigh
-        if lower.contains("ultra") { return .veryHigh }
-        if lower.contains("max") { return .veryHigh }
+        // Ultra / Max have massive bandwidth (400-800+ GB/s)
+        if lower.contains("ultra") { return .extreme }
+        if lower.contains("max") { return .extreme }
 
         let generation = extractGeneration(from: lower)
         let isPro = lower.contains("pro")

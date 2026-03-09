@@ -715,6 +715,78 @@ struct LLMSettingsTab: View {
                     .foregroundStyle(.secondary)
             }
 
+            Section("Memory") {
+                LLMMemoryInfoView()
+            }
+
+            Section("Models") {
+                ForEach(LLMModelManager.recommendedModels) { model in
+                    let isDownloaded = appState.llmModelManager?.availableLocalModels.contains(model.filename) == true
+                    let isActive = llmSettings.selectedLocalModel == model.filename
+                    let isRecommended = model.id == MachineProfile.current.recommendedModelID
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 4) {
+                                Text(model.name)
+                                    .fontWeight(.medium)
+                                if isActive {
+                                    Text("Active")
+                                        .font(.caption2)
+                                        .padding(.horizontal, 5)
+                                        .padding(.vertical, 1)
+                                        .background(.green.opacity(0.15), in: Capsule())
+                                        .foregroundStyle(.green)
+                                }
+                                if isRecommended {
+                                    Text("Recommended")
+                                        .font(.caption2)
+                                        .padding(.horizontal, 5)
+                                        .padding(.vertical, 1)
+                                        .background(.blue.opacity(0.15), in: Capsule())
+                                        .foregroundStyle(.blue)
+                                }
+                            }
+                            HStack(spacing: 4) {
+                                Text("\(model.size) — \(model.languages) — \(model.license)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                if isRecommended {
+                                    Text("~\(MachineProfile.current.estimatedTokensPerSec(modelSizeGB: model.sizeGB)) tok/s")
+                                        .font(.caption)
+                                        .foregroundStyle(.blue)
+                                }
+                            }
+                        }
+                        Spacer()
+                        if isDownloaded {
+                            Button(role: .destructive) {
+                                deleteModel(model.filename)
+                            } label: {
+                                Image(systemName: "trash")
+                            }
+                            .buttonStyle(.borderless)
+                            .help("Delete model")
+                        } else {
+                            Button("Download") {
+                                Task {
+                                    try? await appState.llmModelManager?.downloadModel(model)
+                                }
+                            }
+                            .controlSize(.small)
+                            .disabled(appState.llmModelManager?.isDownloading == true)
+                        }
+                    }
+                }
+
+                if appState.llmModelManager?.isDownloading == true {
+                    ProgressView(value: appState.llmModelManager?.downloadProgress ?? 0)
+                        .progressViewStyle(.linear)
+                    Text("Downloading... \(Int((appState.llmModelManager?.downloadProgress ?? 0) * 100))%")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             if llmSettings.isEnabled {
                 Section("Source") {
                     Picker("Source", selection: $llmSettings.source) {
@@ -732,7 +804,7 @@ struct LLMSettingsTab: View {
                     Section("Local Model") {
                         if let manager = appState.llmModelManager {
                             if manager.availableLocalModels.isEmpty {
-                                Label("No models downloaded yet. Download one below.", systemImage: "arrow.down.circle")
+                                Label("No models downloaded yet. Download one above.", systemImage: "arrow.down.circle")
                                     .font(.callout)
                                     .foregroundStyle(.secondary)
                             } else {
@@ -782,79 +854,7 @@ struct LLMSettingsTab: View {
                                         .foregroundStyle(.secondary)
                                 }
                             }
-
-                            if manager.isDownloading {
-                                ProgressView(value: manager.downloadProgress)
-                                    .progressViewStyle(.linear)
-                                Text("Downloading... \(Int(manager.downloadProgress * 100))%")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
                         }
-                    }
-
-                    Section("Models") {
-                        ForEach(LLMModelManager.recommendedModels) { model in
-                            let isDownloaded = appState.llmModelManager?.availableLocalModels.contains(model.filename) == true
-                            let isActive = llmSettings.selectedLocalModel == model.filename
-                            let isRecommended = model.id == MachineProfile.current.recommendedModelID
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    HStack(spacing: 4) {
-                                        Text(model.name)
-                                            .fontWeight(.medium)
-                                        if isActive {
-                                            Text("Active")
-                                                .font(.caption2)
-                                                .padding(.horizontal, 5)
-                                                .padding(.vertical, 1)
-                                                .background(.green.opacity(0.15), in: Capsule())
-                                                .foregroundStyle(.green)
-                                        }
-                                        if isRecommended {
-                                            Text("Recommended")
-                                                .font(.caption2)
-                                                .padding(.horizontal, 5)
-                                                .padding(.vertical, 1)
-                                                .background(.blue.opacity(0.15), in: Capsule())
-                                                .foregroundStyle(.blue)
-                                        }
-                                    }
-                                    HStack(spacing: 4) {
-                                        Text("\(model.size) — \(model.languages) — \(model.license)")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                        if isRecommended {
-                                            Text("~\(MachineProfile.current.estimatedTokensPerSec(modelSizeGB: model.sizeGB)) tok/s")
-                                                .font(.caption)
-                                                .foregroundStyle(.blue)
-                                        }
-                                    }
-                                }
-                                Spacer()
-                                if isDownloaded {
-                                    Button(role: .destructive) {
-                                        deleteModel(model.filename)
-                                    } label: {
-                                        Image(systemName: "trash")
-                                    }
-                                    .buttonStyle(.borderless)
-                                    .help("Delete model")
-                                    .disabled(isActive)
-                                } else {
-                                    Button("Download") {
-                                        Task {
-                                            try? await appState.llmModelManager?.downloadModel(model)
-                                        }
-                                    }
-                                    .controlSize(.small)
-                                }
-                            }
-                        }
-                    }
-
-                    Section("Memory") {
-                        LLMMemoryInfoView()
                     }
                 } else {
                     Section("Remote API") {
