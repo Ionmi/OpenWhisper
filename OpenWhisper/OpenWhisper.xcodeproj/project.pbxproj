@@ -8,6 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		7BBC86C02F5EC10000D0A40A /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 7BBC86BF2F5EC10000D0A40A /* WhisperKit */; };
+		7BBC86E02F5EC30000D0A40A /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 7BBC86DF2F5EC30000D0A40A /* Sparkle */; };
+		7BBC87002F5EC40000D0A40A /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = 7BBC86FF2F5EC40000D0A40A /* MLXLLM */; };
+		7BBC87022F5EC40000D0A40A /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = 7BBC87012F5EC40000D0A40A /* MLXLMCommon */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -28,6 +31,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				7BBC86C02F5EC10000D0A40A /* WhisperKit in Frameworks */,
+				7BBC87002F5EC40000D0A40A /* MLXLLM in Frameworks */,
+				7BBC87022F5EC40000D0A40A /* MLXLMCommon in Frameworks */,
+				7BBC86E02F5EC30000D0A40A /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -71,6 +77,9 @@
 			name = OpenWhisper;
 			packageProductDependencies = (
 				7BBC86BF2F5EC10000D0A40A /* WhisperKit */,
+				7BBC86FF2F5EC40000D0A40A /* MLXLLM */,
+				7BBC87012F5EC40000D0A40A /* MLXLMCommon */,
+				7BBC86DF2F5EC30000D0A40A /* Sparkle */,
 			);
 			productName = OpenWhisper;
 			productReference = 7BBC86A82F5EC06700D0A40A /* OpenWhisper.app */;
@@ -102,6 +111,8 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				7BBC86BE2F5EC10000D0A40A /* XCRemoteSwiftPackageReference "WhisperKit" */,
+				7BBC86FE2F5EC40000D0A40A /* XCRemoteSwiftPackageReference "mlx-swift-lm" */,
+				7BBC86DE2F5EC30000D0A40A /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 7BBC86A92F5EC06700D0A40A /* Products */;
@@ -170,7 +181,7 @@
 				COPY_PHASE_STRIP = NO;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = K5U4P9FFD5;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -189,7 +200,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.4;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -236,7 +247,7 @@
 				COPY_PHASE_STRIP = NO;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = K5U4P9FFD5;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -249,7 +260,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.4;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = macosx;
@@ -266,11 +277,12 @@
 				AUTOMATION_APPLE_EVENTS = NO;
 				CODE_SIGN_ENTITLEMENTS = OpenWhisper/OpenWhisper.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = K5U4P9FFD5;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -284,6 +296,8 @@
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "OpenWhisper needs microphone access to record your voice for transcription.";
+				INFOPLIST_KEY_SUFeedURL = "https://github.com/Ionmi/OpenWhisper/releases.atom";
+				INFOPLIST_KEY_SUPublicEDKey = "aWflUEPCPGqa6jkgy8ucggsmYuKEnk7RuA0TiyvzC+o=";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -313,11 +327,12 @@
 				AUTOMATION_APPLE_EVENTS = NO;
 				CODE_SIGN_ENTITLEMENTS = OpenWhisper/OpenWhisper.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = K5U4P9FFD5;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -331,6 +346,8 @@
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "OpenWhisper needs microphone access to record your voice for transcription.";
+				INFOPLIST_KEY_SUFeedURL = "https://github.com/Ionmi/OpenWhisper/releases.atom";
+				INFOPLIST_KEY_SUPublicEDKey = "aWflUEPCPGqa6jkgy8ucggsmYuKEnk7RuA0TiyvzC+o=";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -384,6 +401,22 @@
 				minimumVersion = 0.9.0;
 			};
 		};
+		7BBC86DE2F5EC30000D0A40A /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.0.0;
+			};
+		};
+		7BBC86FE2F5EC40000D0A40A /* XCRemoteSwiftPackageReference "mlx-swift-lm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/ml-explore/mlx-swift-lm";
+			requirement = {
+				kind = upToNextMinorVersion;
+				minimumVersion = 2.29.1;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -391,6 +424,21 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 7BBC86BE2F5EC10000D0A40A /* XCRemoteSwiftPackageReference "WhisperKit" */;
 			productName = WhisperKit;
+		};
+		7BBC86DF2F5EC30000D0A40A /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7BBC86DE2F5EC30000D0A40A /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+		7BBC86FF2F5EC40000D0A40A /* MLXLLM */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7BBC86FE2F5EC40000D0A40A /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
+			productName = MLXLLM;
+		};
+		7BBC87012F5EC40000D0A40A /* MLXLMCommon */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7BBC86FE2F5EC40000D0A40A /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
+			productName = MLXLMCommon;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

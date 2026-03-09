@@ -2,8 +2,9 @@ import SwiftUI
 
 struct MenuBarView: View {
     @Environment(AppState.self) private var appState
+    @Environment(UpdaterService.self) private var updaterService
     @Environment(\.openWindow) private var openWindow
-    @Environment(\.openSettings) private var openSettings
+
     @State private var copied = false
 
     var body: some View {
@@ -138,8 +139,12 @@ struct MenuBarView: View {
         }
 
         MenuItemButton("Settings…", systemImage: "gearshape") {
-            NSApp.activate(ignoringOtherApps: true)
-            openSettings()
+            let app = appState
+            let updater = updaterService
+            NSApp.keyWindow?.close()
+            DispatchQueue.main.async {
+                SettingsWindowController.show(appState: app, updaterService: updater)
+            }
         }
         .keyboardShortcut(",", modifiers: .command)
 
@@ -161,6 +166,7 @@ struct MenuBarView: View {
         case .idle: .green
         case .recording: .red
         case .transcribing: .orange
+        case .processing: .purple
         }
     }
 
@@ -175,6 +181,7 @@ struct MenuBarView: View {
         case .idle: "Ready"
         case .recording: "Recording…"
         case .transcribing: "Transcribing…"
+        case .processing: "Processing…"
         }
     }
 }

@@ -60,7 +60,9 @@ final class HotkeyService {
             userInfo: Unmanaged.passUnretained(self).toOpaque()
         ) else {
             if !AXIsProcessTrusted() {
+                #if DEBUG
                 print("[HotkeyService] Failed to create event tap — Accessibility permission not granted.")
+                #endif
                 onEventTapFailed?()
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
@@ -75,7 +77,9 @@ final class HotkeyService {
         runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
         CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
+        #if DEBUG
         print("[HotkeyService] Event tap created successfully.")
+        #endif
     }
 
     func stop() {
@@ -108,7 +112,6 @@ final class HotkeyService {
             if let tap = eventTap {
                 CGEvent.tapEnable(tap: tap, enable: true)
             }
-            // These are not real input events, just pass through
             return Unmanaged.passRetained(event)
         }
 
@@ -151,6 +154,12 @@ final class HotkeyService {
         let matchesKey = eventKeyCode == keyCode
         let matchesModifiers = event.flags.contains(requiredFlags)
 
+        // Consume auto-repeat events for the hotkey while recording,
+        // so they don't leak through to the focused app (e.g. typing spaces).
+        if isActive && isAutoRepeat && matchesKey && matchesModifiers {
+            return nil
+        }
+
         // Hold/Auto mode: detect key release of the hotkey
         let isHoldBehavior = shortcutMode == .hold || (shortcutMode == .auto && !autoResolvedToToggle)
         if isHoldBehavior && isActive && isHotkeyHeld {
@@ -192,9 +201,11 @@ final class HotkeyService {
         if type == .keyDown && matchesKey && matchesModifiers && !isAutoRepeat {
             if !isActive {
                 isHotkeyHeld = true
-                hotkeyPressTime = CFAbsoluteTimeGetCurrent()
                 autoResolvedToToggle = false
                 onActivate?()
+                // Set press time AFTER activation completes, so the auto-hold
+                // threshold isn't eaten by audio engine startup latency.
+                hotkeyPressTime = CFAbsoluteTimeGetCurrent()
             } else if shortcutMode == .toggle || (shortcutMode == .auto && autoResolvedToToggle) {
                 // Pressing hotkey again while active in toggle mode → confirm
                 autoResolvedToToggle = false

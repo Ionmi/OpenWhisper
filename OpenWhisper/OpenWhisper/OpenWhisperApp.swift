@@ -3,12 +3,14 @@ import SwiftUI
 @main
 struct OpenWhisperApp: App {
     @State private var appState = AppState()
+    @State private var updaterService = UpdaterService()
     @State private var didAutoSetup = false
 
     var body: some Scene {
         MenuBarExtra {
             MenuBarView()
                 .environment(appState)
+                .environment(updaterService)
         } label: {
             StatusIndicatorView(state: appState.currentState)
                 .task {
@@ -25,10 +27,7 @@ struct OpenWhisperApp: App {
         .windowResizability(.contentSize)
         .windowStyle(.titleBar)
 
-        Settings {
-            SettingsView()
-                .environment(appState)
-        }
+        // Settings window is managed by SettingsWindowController (AppKit)
     }
 
     private func performAutoSetupIfNeeded() {

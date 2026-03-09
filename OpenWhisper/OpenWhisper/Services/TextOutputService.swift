@@ -57,6 +57,7 @@ final class TextOutputService {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
             self.simulatePaste()
 
+            // Restore previous clipboard after target app has time to read it
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 if let previous = previousContents {
                     pasteboard.clearContents()

@@ -127,6 +127,32 @@ struct FloatingRecorderMinimalView: View {
     }
 }
 
+// MARK: - Processing View
+
+struct FloatingRecorderProcessingView: View {
+    @State private var animating = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "brain")
+                .foregroundStyle(.purple)
+                .font(.system(size: 16))
+                .symbolEffect(.pulse, isActive: animating)
+            Text("Refining...")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.white.opacity(0.9))
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(
+            Capsule(style: .continuous)
+                .fill(.ultraThinMaterial)
+        )
+        .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
+        .onAppear { animating = true }
+    }
+}
+
 // MARK: - Confirmation View
 
 struct FloatingRecorderConfirmationView: View {
@@ -372,6 +398,22 @@ final class FloatingRecorderController {
     func hide() {
         panel?.orderOut(nil)
         panel = nil
+    }
+
+    func showProcessing() {
+        guard let panel, appState != nil else { return }
+
+        let alignment = swiftUIAlignment
+        let canvas = Self.canvasSize
+
+        let processingView = FloatingCanvasView(
+            content: FloatingRecorderProcessingView(),
+            alignment: alignment,
+            canvasSize: canvas
+        )
+        let hosting = NSHostingView(rootView: processingView)
+        hosting.setFrameSize(canvas)
+        panel.contentView = hosting
     }
 
     func showConfirmation() {

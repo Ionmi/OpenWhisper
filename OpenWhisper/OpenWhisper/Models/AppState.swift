@@ -11,19 +11,36 @@ final class AppState {
     var isLoadingModel = false
     var modelLoadProgress: Double = 0
     var audioLevel: Float = 0
+    var isLLMLoaded = false
 
     /// Live preview text shown in the pill during recording
     var livePreviewText = ""
 
     let settings = AppSettings()
+    let audioSettings = AudioSettings()
+    let llmSettings = LLMSettings()
 
-    // Services
-    var audioCaptureService: AudioCaptureService?
-    var transcriptionEngine: (any TranscriptionEngine)?
+    // Services (existing)
+    var audioCaptureService: (any AudioCapturePort)?
+    var transcriptionEngine: (any TranscriptionPort)?
     var hotkeyService: HotkeyService?
     var textOutputService: TextOutputService?
     var permissionsManager = PermissionsManager()
     var floatingRecorder: FloatingRecorderController?
+
+    // Services (v2)
+    var dictionaryAdapter: (any DictionaryPort)?
+    var snippetAdapter: (any SnippetPort)?
+    var textProcessor: (any TextProcessingPort)?
+    var voiceActivityDetector: (any VoiceActivityPort)?
+    var appDetector: (any AppDetectionPort)?
+    var llmModelManager: LLMModelManager?
+    var mlxLLMAdapter: MLXLLMAdapter?
+    var remoteLLMAdapter: RemoteLLMAdapter?
+    var llmAdapter: (any LLMPort)?
+    var llmProcessor: LLMTextProcessor?
+    var autoDictionaryService: AutoDictionaryService?
+
     private var isSetUp = false
     private var audioLevelTimer: Timer?
 
@@ -33,6 +50,10 @@ final class AppState {
     private var streamedWordCount = 0
     private var isStreamTranscribing = false
     private var lastStreamedSampleCount = 0
+    private var detectedLanguage = ""
+
+    // LLM state
+    private var lastLLMInputText = ""
 
     // MARK: - Recording
 
@@ -49,19 +70,27 @@ final class AppState {
             return
         }
 
+        // Show pill immediately for responsiveness, before audio engine starts.
+        currentState = .recording
+        errorMessage = nil
+        streamedText = ""
+        streamedWordCount = 0
+        livePreviewText = ""
+        lastStreamedSampleCount = 0
+        detectedLanguage = ""
+        lastLLMInputText = ""
+        hotkeyService?.isActive = true
+        floatingRecorder?.show()
+
         do {
             try audioCaptureService.startRecording()
-            currentState = .recording
-            errorMessage = nil
-            streamedText = ""
-            streamedWordCount = 0
-            livePreviewText = ""
-            lastStreamedSampleCount = 0
-            hotkeyService?.isActive = true
-            floatingRecorder?.show()
             startAudioLevelPolling()
             startStreamingTranscription()
         } catch {
+            // Audio failed — revert to idle
+            currentState = .idle
+            hotkeyService?.isActive = false
+            floatingRecorder?.hide()
             errorMessage = "Failed to start recording: \(error.localizedDescription)"
         }
     }
@@ -74,30 +103,57 @@ final class AppState {
         audioLevel = 0
         hotkeyService?.isActive = false
 
-        let audioSamples = audioCaptureService?.stopRecording() ?? []
+        // Change state immediately so UI updates, but keep audio engine
+        // running briefly to flush any pending buffers.
         currentState = .transcribing
         livePreviewText = ""
-        floatingRecorder?.showConfirmation()
-
-        guard !audioSamples.isEmpty else {
-            currentState = .idle
-            streamedText = ""
-            return
-        }
 
         let language = settings.selectedLanguage
 
         Task {
+            // Let the audio engine keep recording for a short window so
+            // any in-flight buffers are delivered to the tap callback.
+            try? await Task.sleep(for: .milliseconds(300))
+
+            let audioSamples = audioCaptureService?.stopRecording() ?? []
+
+            guard !audioSamples.isEmpty else {
+                floatingRecorder?.hide()
+                streamedText = ""
+                currentState = .idle
+                return
+            }
+
+            defer {
+                streamedText = ""
+                currentState = .idle
+            }
+
             var finalText = streamedText
 
-            // Do one final transcription of the complete audio for best accuracy
+            // 1. Filter audio through VAD if enabled
+            var processedSamples = audioSamples
+            if audioSettings.vadEnabled, let vad = voiceActivityDetector {
+                let segments = vad.detectSpeechSegments(in: audioSamples, sampleRate: 16000)
+                if !segments.isEmpty {
+                    processedSamples = segments.flatMap { Array(audioSamples[$0.start..<min($0.end, audioSamples.count)]) }
+                }
+            }
+
+            // 2. Pad with trailing silence so Whisper can properly
+            //    transcribe the very last words (avoids cut-off).
+            let silencePadding = [Float](repeating: 0, count: 4800) // 300ms at 16kHz
+            processedSamples += silencePadding
+
+            // 3. Final transcription of the complete audio for best accuracy
             if let engine = transcriptionEngine {
                 do {
-                    let text = try await engine.transcribe(
-                        audioSamples: audioSamples,
+                    let output = try await engine.transcribe(
+                        audioSamples: processedSamples,
                         language: language == "auto" ? nil : language
                     )
-                    let cleaned = Self.cleanTranscription(text)
+                    detectedLanguage = output.detectedLanguage
+                    let cleaned = Self.cleanTranscription(output.text)
                     if !cleaned.isEmpty {
                         finalText = cleaned
                     }
@@ -109,12 +165,38 @@ final class AppState {
             finalText = Self.cleanTranscription(finalText)
 
             guard !finalText.isEmpty else {
-                streamedText = ""
-                currentState = .idle
+                floatingRecorder?.hide()
                 return
             }
 
-            // Save to history
+            // 4. Check snippet match — if exact match, use snippet and skip processing
+            if let snippetMatch = snippetAdapter?.match(finalText) {
+                finalText = snippetMatch
+            } else {
+                // 5. Regex processing pipeline (dictionary, fillers, punctuation)
+                if let processor = textProcessor {
+                    finalText = processor.process(finalText, language: language)
+                }
+            }
+
+            // 6. LLM refinement — always run on the final transcription text.
+            if llmSettings.isEnabled, llmAdapter?.isModelLoaded == true, let llmProcessor {
+                lastLLMInputText = ""
+
+                currentState = .processing
+                floatingRecorder?.showProcessing()
+                let textToRefine = finalText
+                let llmLang = detectedLanguage.isEmpty ? language : detectedLanguage
+                if let refined = try? await llmProcessor.process(textToRefine, language: llmLang),
+                   !refined.isEmpty {
+                    finalText = refined
+                }
+            } else {
+                lastLLMInputText = ""
+            }
+
+            // 7. Output — show confirmation now that all processing is done
+            floatingRecorder?.showConfirmation()
             let result = TranscriptionResult(
                 text: finalText,
                 timestamp: Date(),
@@ -126,7 +208,6 @@ final class AppState {
                 transcriptionHistory = Array(transcriptionHistory.prefix(50))
             }
 
-            // Output based on mode
             switch settings.outputMode {
             case .pasteAutomatic:
                 textOutputService?.pasteText(finalText)
@@ -136,8 +217,7 @@ final class AppState {
                 break
             }
 
-            streamedText = ""
-            currentState = .idle
+            autoDictionaryService?.startMonitoring(transcribedText: finalText)
         }
     }
 
@@ -145,6 +225,7 @@ final class AppState {
     func cancelRecording() {
         guard currentState == .recording else { return }
         stopStreamingTranscription()
+        lastLLMInputText = ""
         stopAudioLevelPolling()
         floatingRecorder?.hide()
         audioLevel = 0
@@ -190,17 +271,18 @@ final class AppState {
 
         Task {
             do {
-                let text = try await engine.transcribe(
+                let output = try await engine.transcribe(
                     audioSamples: samples,
                     language: language == "auto" ? nil : language
                 )
+                detectedLanguage = output.detectedLanguage
 
                 guard currentState == .recording else {
                     isStreamTranscribing = false
                     return
                 }
 
-                let cleaned = Self.cleanTranscription(text)
+                let cleaned = Self.cleanTranscription(output.text)
                 guard !cleaned.isEmpty else {
                     isStreamTranscribing = false
                     return
@@ -273,9 +355,93 @@ final class AppState {
     func setupServices() {
         guard !isSetUp else { return }
         isSetUp = true
-        audioCaptureService = AudioCaptureService()
+
+        // Use voice processing (AEC + noise suppression) when enabled in settings
+        if audioSettings.aecEnabled || audioSettings.noiseSuppressionEnabled {
+            audioCaptureService = VoiceProcessingAudioCapture()
+        } else {
+            audioCaptureService = AudioCaptureService()
+        }
+
         textOutputService = TextOutputService()
         floatingRecorder = FloatingRecorderController(appState: self)
+
+        // v2 services
+        let dictionary = JSONDictionaryAdapter()
+        dictionaryAdapter = dictionary
+        snippetAdapter = JSONSnippetAdapter()
+        textProcessor = RegexTextProcessor(dictionaryAdapter: dictionary)
+
+        let vad = EnergyVADAdapter()
+        try? vad.loadModel()
+        voiceActivityDetector = vad
+
+        let detector = NSWorkspaceAppDetector()
+        appDetector = detector
+        llmModelManager = LLMModelManager()
+
+        // LLM adapters (both created, active one chosen by settings)
+        let mlx = MLXLLMAdapter()
+        mlxLLMAdapter = mlx
+        let remote = RemoteLLMAdapter(
+            baseURL: llmSettings.remoteBaseURL,
+            apiKey: llmSettings.remoteAPIKey,
+            modelName: llmSettings.remoteModelName
+        )
+        remoteLLMAdapter = remote
+
+        // Select active adapter based on settings
+        let activeAdapter: any LLMPort = llmSettings.source == .remote ? remote : mlx
+        llmAdapter = activeAdapter
+
+        // Load context modes from saved config (or use defaults)
+        let contextConfig = JSONStorageAdapter.load(ContextModeConfig.self, from: "context-modes.json") ?? .default
+
+        llmProcessor = LLMTextProcessor(
+            llm: activeAdapter,
+            appDetector: detector,
+            contextConfig: contextConfig,
+            dictionaryAdapter: dictionary
+        )
+
+        // Auto-select model: prefer already cached, then recommended
+        if llmSettings.selectedLocalModel.isEmpty || llmModelManager?.isModelCached(llmSettings.selectedLocalModel) == false {
+            // Try to find a cached model
+            if let cached = LLMModelManager.recommendedModels.first(where: { llmModelManager?.isModelCached($0.huggingFaceID) == true }) {
+                llmSettings.selectedLocalModel = cached.huggingFaceID
+            } else if llmSettings.selectedLocalModel.isEmpty {
+                // Nothing cached — set recommended as default (will download on first use)
+                let recommended = MachineProfile.current.recommendedModelID
+                if let model = LLMModelManager.recommendedModels.first(where: { $0.id == recommended }) {
+                    llmSettings.selectedLocalModel = model.huggingFaceID
+                }
+            }
+        }
+
+        // Auto-load cached MLX model on startup when LLM is enabled
+
+        if llmSettings.isEnabled,
+           llmSettings.source == .local,
+           !llmSettings.selectedLocalModel.isEmpty,
+           llmModelManager?.isModelCached(llmSettings.selectedLocalModel) == true {
+            let modelID = llmSettings.selectedLocalModel
+            let tone = (JSONStorageAdapter.load(ContextModeConfig.self, from: "context-modes.json") ?? .default).defaultTone
+            Task { @MainActor in
+                do {
+                    try await mlx.loadModel(huggingFaceID: modelID, progressHandler: nil)
+                    self.isLLMLoaded = true
+                    let warmUpPrompt = LLMTextProcessor.buildSystemPrompt(tone: tone)
+                    await mlx.warmUp(systemPrompt: warmUpPrompt)
+                } catch {
+                    self.isLLMLoaded = false
+                    self.errorMessage = "Failed to load LLM model: \(error.localizedDescription)"
+                }
+            }
+        }
+
+        let autoDict = AutoDictionaryService()
+        autoDict.configure(dictionaryAdapter: dictionary)
+        autoDictionaryService = autoDict
 
         let hotkeyService = HotkeyService(
             keyCode: settings.hotkeyKeyCode,
@@ -317,6 +483,56 @@ final class AppState {
     /// Call when shortcut mode changes in settings
     func updateShortcutMode() {
         hotkeyService?.shortcutMode = settings.shortcutMode
+    }
+
+    /// Call when LLM settings change (source, model, remote config)
+    func updateLLMConfiguration() {
+        guard let dictionary = dictionaryAdapter,
+              let detector = appDetector
+        else { return }
+
+        // Update remote adapter config
+        remoteLLMAdapter?.configure(
+            baseURL: llmSettings.remoteBaseURL,
+            apiKey: llmSettings.remoteAPIKey,
+            modelName: llmSettings.remoteModelName
+        )
+
+        // Switch active adapter
+        let activeAdapter: (any LLMPort)?
+        if llmSettings.source == .remote {
+            activeAdapter = remoteLLMAdapter ?? mlxLLMAdapter
+        } else {
+            activeAdapter = mlxLLMAdapter
+        }
+        guard let activeAdapter else { return }
+        llmAdapter = activeAdapter
+
+        // Rebuild processor with current context config
+        let contextConfig = JSONStorageAdapter.load(ContextModeConfig.self, from: "context-modes.json") ?? .default
+        llmProcessor = LLMTextProcessor(
+            llm: activeAdapter,
+            appDetector: detector,
+            contextConfig: contextConfig,
+            dictionaryAdapter: dictionary
+        )
+    }
+
+    /// Load a local LLM model by HuggingFace ID
+    func loadLocalLLMModel(_ huggingFaceID: String) async {
+        guard let mlx = mlxLLMAdapter else { return }
+        isLLMLoaded = false
+        do {
+            try await mlx.loadModel(huggingFaceID: huggingFaceID, progressHandler: nil)
+            llmSettings.selectedLocalModel = huggingFaceID
+            isLLMLoaded = true
+            updateLLMConfiguration()
+            let tone = (JSONStorageAdapter.load(ContextModeConfig.self, from: "context-modes.json") ?? .default).defaultTone
+            let warmUpPrompt = LLMTextProcessor.buildSystemPrompt(tone: tone)
+            await mlx.warmUp(systemPrompt: warmUpPrompt)
+        } catch {
+            errorMessage = "Failed to load LLM: \(error.localizedDescription)"
+        }
     }
 
     func loadTranscriptionEngine() async {

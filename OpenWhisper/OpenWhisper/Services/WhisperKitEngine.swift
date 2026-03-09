@@ -1,27 +1,39 @@
 import Foundation
 import WhisperKit
 
-final class WhisperKitEngine: TranscriptionEngine, @unchecked Sendable {
+final class WhisperKitEngine: TranscriptionPort, @unchecked Sendable {
     private var whisperKit: WhisperKit?
+    private let lock = NSLock()
     private var _isModelLoaded = false
 
-    var isModelLoaded: Bool { _isModelLoaded }
+    var isModelLoaded: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return _isModelLoaded
+    }
 
     func loadModel(name: String) async throws {
-        _isModelLoaded = false
-        // Use Application Support instead of ~/Documents (which is TCC-protected on modern macOS)
+        lock.withLock {
+            _isModelLoaded = false
+        }
+
         let kit = try await WhisperKit(
             model: name,
             downloadBase: Constants.modelsDirectory,
             verbose: false,
             prewarm: true
         )
-        whisperKit = kit
-        _isModelLoaded = true
+
+        lock.withLock {
+            whisperKit = kit
+            _isModelLoaded = true
+        }
     }
 
-    func transcribe(audioSamples: [Float], language: String?) async throws -> String {
-        guard let whisperKit else {
+    func transcribe(audioSamples: [Float], language: String?) async throws -> TranscriptionOutput {
+        let kit = lock.withLock { whisperKit }
+
+        guard let kit else {
             throw TranscriptionError.modelNotLoaded
         }
 
@@ -30,7 +42,7 @@ final class WhisperKitEngine: TranscriptionEngine, @unchecked Sendable {
             options.language = language
         }
 
-        let results = try await whisperKit.transcribe(
+        let results = try await kit.transcribe(
             audioArray: audioSamples,
             decodeOptions: options
         )
@@ -40,9 +52,11 @@ final class WhisperKitEngine: TranscriptionEngine, @unchecked Sendable {
             .joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
+        let detectedLanguage = results.first?.language ?? language ?? "en"
+
         if text.isEmpty {
             throw TranscriptionError.transcriptionFailed("No speech detected.")
         }
-        return text
+        return TranscriptionOutput(text: text, detectedLanguage: detectedLanguage)
     }
 }

@@ -1,24 +1,7 @@
 import Foundation
 
-enum TranscriptionError: LocalizedError {
-    case modelNotLoaded
-    case transcriptionFailed(String)
-    case modelNotFound(String)
+// Legacy file — the canonical TranscriptionPort protocol and TranscriptionError
+// enum now live in Ports/TranscriptionPort.swift.
+// This file provides a typealias for backward compatibility during migration.
 
-    var errorDescription: String? {
-        switch self {
-        case .modelNotLoaded:
-            return "No transcription model is loaded."
-        case .transcriptionFailed(let reason):
-            return "Transcription failed: \(reason)"
-        case .modelNotFound(let name):
-            return "Model '\(name)' not found."
-        }
-    }
-}
-
-protocol TranscriptionEngine: Sendable {
-    func loadModel(name: String) async throws
-    func transcribe(audioSamples: [Float], language: String?) async throws -> String
-    var isModelLoaded: Bool { get }
-}
+typealias TranscriptionEngine = TranscriptionPort

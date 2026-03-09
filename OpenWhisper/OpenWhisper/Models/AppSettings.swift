@@ -66,7 +66,6 @@ final class AppSettings {
 
     private func save(_ value: Any, forKey key: String) {
         defaults.set(value, forKey: key)
-        defaults.synchronize()
     }
 
     var hotkeyDisplayString: String {
