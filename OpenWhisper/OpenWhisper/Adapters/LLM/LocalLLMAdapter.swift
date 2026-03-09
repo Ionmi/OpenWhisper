@@ -13,26 +13,24 @@ final class LocalLLMAdapter: LLMPort, @unchecked Sendable {
     }
 
     func loadModel(name: String, path: URL) async throws {
-        lock.lock()
-        _isModelLoaded = false
-        llamaService = nil
-        lock.unlock()
+        lock.withLock {
+            _isModelLoaded = false
+            llamaService = nil
+        }
 
         let service = LlamaService(
             modelUrl: path,
             config: .init(batchSize: 512, maxTokenCount: 512, useGPU: true)
         )
 
-        lock.lock()
-        llamaService = service
-        _isModelLoaded = true
-        lock.unlock()
+        lock.withLock {
+            llamaService = service
+            _isModelLoaded = true
+        }
     }
 
     func generate(systemPrompt: String, userPrompt: String) async throws -> String {
-        lock.lock()
-        let service = llamaService
-        lock.unlock()
+        let service = lock.withLock { llamaService }
 
         guard let service else {
             throw LLMError.modelNotLoaded
@@ -48,16 +46,15 @@ final class LocalLLMAdapter: LLMPort, @unchecked Sendable {
                 to: messages,
                 samplingConfig: .init(temperature: 0.1, seed: 42)
             )
-            return response.trimmingCharacters(in: .whitespacesAndNewlines)
+            return Self.stripThinkingBlocks(response)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
         } catch {
             throw LLMError.generationFailed(error.localizedDescription)
         }
     }
 
     func warmUp(systemPrompt: String) async {
-        lock.lock()
-        let service = llamaService
-        lock.unlock()
+        let service = lock.withLock { llamaService }
         guard let service else { return }
         // Send a minimal prompt to populate KV cache with system prompt tokens.
         // Use "." as user input to minimize generation output.
@@ -68,6 +65,25 @@ final class LocalLLMAdapter: LLMPort, @unchecked Sendable {
             ],
             samplingConfig: .init(temperature: 0.0, seed: 0)
         )
+    }
+
+    /// Strip `<think>...</think>` blocks that some models (Qwen3.5, DeepSeek) produce.
+    private static func stripThinkingBlocks(_ text: String) -> String {
+        // Remove <think>...</think> blocks (greedy, handles multiline)
+        guard let regex = try? NSRegularExpression(
+            pattern: #"<think>[\s\S]*?</think>"#,
+            options: .caseInsensitive
+        ) else { return text }
+        var result = regex.stringByReplacingMatches(
+            in: text,
+            range: NSRange(text.startIndex..., in: text),
+            withTemplate: ""
+        )
+        // Also handle unclosed <think> blocks (model hit token limit mid-thinking)
+        if let thinkRange = result.range(of: "<think>", options: .caseInsensitive) {
+            result = String(result[..<thinkRange.lowerBound])
+        }
+        return result
     }
 
     func unloadModel() {

@@ -37,14 +37,25 @@ final class LLMTextProcessor {
         // Build system prompt in the same language as input to prevent drift
         let systemPrompt = Self.buildSystemPrompt(language: language, tone: tone, dictionaryTerms: dictString)
 
-        let result = try await llm.generate(systemPrompt: systemPrompt, userPrompt: text)
+        let raw = try await llm.generate(systemPrompt: systemPrompt, userPrompt: text)
+        let result = Self.stripThinkingTags(raw)
         return result.isEmpty ? text : result
+    }
+
+    /// Strip `<think>…</think>` blocks that some models (DeepSeek, Qwen, etc.) emit.
+    static func stripThinkingTags(_ text: String) -> String {
+        text.replacingOccurrences(
+            of: "<think>[\\s\\S]*?</think>",
+            with: "",
+            options: .regularExpression
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     static func buildSystemPrompt(language: String, tone: String, dictionaryTerms: String) -> String {
         switch language {
         case "es":
             return """
+            /no_think
             Eres un post-procesador de texto para dictado por voz. Reglas:
             - Corrige auto-correcciones (ej: "2... en realidad 3" -> "3")
             - Elimina arranques falsos y repeticiones
@@ -52,10 +63,11 @@ final class LLMTextProcessor {
             - Tono: \(tone)
             - Conserva el significado original y el idioma. NO traduzcas.
             - Usa estas palabras exactas del diccionario: \(dictionaryTerms)
-            - Devuelve SOLO el texto corregido, nada mas.
+            - Devuelve SOLO el texto corregido, sin explicaciones ni etiquetas.
             """
         case "en":
             return """
+            /no_think
             You are a text post-processor for voice dictation. Rules:
             - Fix self-corrections (e.g., "2... actually 3" -> "3")
             - Remove false starts and repetitions
@@ -63,10 +75,11 @@ final class LLMTextProcessor {
             - Tone: \(tone)
             - Preserve original meaning and language. Do NOT translate.
             - Use these exact dictionary spellings: \(dictionaryTerms)
-            - Output ONLY the corrected text, nothing else.
+            - Output ONLY the corrected text, no explanations or tags.
             """
         default:
             return """
+            /no_think
             You are a text post-processor for voice dictation. Rules:
             - Fix self-corrections (e.g., "2... actually 3" -> "3")
             - Remove false starts and repetitions
@@ -75,7 +88,7 @@ final class LLMTextProcessor {
             - Preserve original meaning and language. Do NOT translate.
             - The input text is in language code: \(language). Keep it in that language.
             - Use these exact dictionary spellings: \(dictionaryTerms)
-            - Output ONLY the corrected text, nothing else.
+            - Output ONLY the corrected text, no explanations or tags.
             """
         }
     }
