@@ -1,56 +1,95 @@
 import SwiftUI
 
+// MARK: - Settings Pages
+
+enum SettingsPage: String, CaseIterable, Identifiable {
+    case general, shortcut, model, appearance, audio, processing, context, llm, about
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .general: "General"
+        case .shortcut: "Shortcut"
+        case .model: "Model"
+        case .appearance: "Appearance"
+        case .audio: "Audio"
+        case .processing: "Processing"
+        case .context: "Context"
+        case .llm: "LLM"
+        case .about: "About"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .general: "gear"
+        case .shortcut: "keyboard"
+        case .model: "cpu"
+        case .appearance: "paintbrush"
+        case .audio: "waveform"
+        case .processing: "text.badge.checkmark"
+        case .context: "app.badge"
+        case .llm: "brain"
+        case .about: "info.circle"
+        }
+    }
+}
+
+// MARK: - Settings View
+
 struct SettingsView: View {
     @Environment(AppState.self) private var appState
+    @State private var selectedPage: SettingsPage = .general
 
     var body: some View {
-        TabView {
+        NavigationSplitView {
+            List(SettingsPage.allCases, selection: $selectedPage) { page in
+                Label(page.title, systemImage: page.icon)
+                    .tag(page)
+            }
+            .listStyle(.sidebar)
+            .navigationSplitViewColumnWidth(200)
+        } detail: {
+            settingsDetail
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .navigationTitle(selectedPage.title)
+        }
+        .toolbar(removing: .sidebarToggle)
+        .navigationSplitViewStyle(.balanced)
+        .frame(width: 660, height: 480)
+    }
+
+    @ViewBuilder
+    private var settingsDetail: some View {
+        switch selectedPage {
+        case .general:
             GeneralSettingsTab()
                 .environment(appState)
-                .tabItem {
-                    Label("General", systemImage: "gear")
-                }
+        case .shortcut:
             HotkeySettingsTab()
                 .environment(appState)
-                .tabItem {
-                    Label("Shortcut", systemImage: "keyboard")
-                }
+        case .model:
             ModelSettingsTab()
                 .environment(appState)
-                .tabItem {
-                    Label("Model", systemImage: "cpu")
-                }
+        case .appearance:
             AppearanceSettingsTab()
                 .environment(appState)
-                .tabItem {
-                    Label("Appearance", systemImage: "paintbrush")
-                }
+        case .audio:
             AudioSettingsTab()
                 .environment(appState)
-                .tabItem {
-                    Label("Audio", systemImage: "waveform")
-                }
+        case .processing:
             PostProcessingSettingsTab()
                 .environment(appState)
-                .tabItem {
-                    Label("Processing", systemImage: "text.badge.checkmark")
-                }
+        case .context:
             ContextModesSettingsTab()
                 .environment(appState)
-                .tabItem {
-                    Label("Context", systemImage: "app.badge")
-                }
+        case .llm:
             LLMSettingsTab()
                 .environment(appState)
-                .tabItem {
-                    Label("LLM", systemImage: "brain")
-                }
+        case .about:
             AboutSettingsTab()
-                .tabItem {
-                    Label("About", systemImage: "info.circle")
-                }
         }
-        .frame(width: 520, height: 450)
     }
 }
 
@@ -130,6 +169,7 @@ struct GeneralSettingsTab: View {
 struct HotkeySettingsTab: View {
     @Environment(AppState.self) private var appState
     @State private var isRecordingHotkey = false
+    @State private var eventMonitor: Any?
 
     var body: some View {
         @Bindable var settings = appState.settings
@@ -157,27 +197,18 @@ struct HotkeySettingsTab: View {
                 }
 
                 if isRecordingHotkey {
-                    Text("Press new key combination…")
-                        .foregroundStyle(.orange)
-                        .onAppear {
-                            NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-                                let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-                                if !mods.isEmpty && event.keyCode != 0 {
-                                    appState.settings.hotkeyKeyCode = event.keyCode
-                                    appState.settings.hotkeyModifiers = UInt32(mods.rawValue)
-                                    appState.hotkeyService?.updateHotkey(
-                                        keyCode: event.keyCode,
-                                        modifiers: UInt32(mods.rawValue)
-                                    )
-                                    isRecordingHotkey = false
-                                }
-                                return nil
-                            }
+                    HStack {
+                        Text("Press new key combination…")
+                            .foregroundStyle(.orange)
+                        Button("Cancel") {
+                            stopRecordingHotkey()
                         }
+                        .controlSize(.small)
+                    }
                 } else {
                     HStack {
                         Button("Record New Hotkey") {
-                            isRecordingHotkey = true
+                            startRecordingHotkey()
                         }
 
                         Button("Reset to Default (\u{2325}Space)") {
@@ -196,6 +227,37 @@ struct HotkeySettingsTab: View {
         .onChange(of: settings.shortcutMode) {
             appState.updateShortcutMode()
         }
+        .onDisappear {
+            stopRecordingHotkey()
+        }
+    }
+
+    private func startRecordingHotkey() {
+        // Remove any existing monitor first
+        stopRecordingHotkey()
+        isRecordingHotkey = true
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [self] event in
+            let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            if !mods.isEmpty && event.keyCode != 0 {
+                appState.settings.hotkeyKeyCode = event.keyCode
+                appState.settings.hotkeyModifiers = UInt32(mods.rawValue)
+                appState.hotkeyService?.updateHotkey(
+                    keyCode: event.keyCode,
+                    modifiers: UInt32(mods.rawValue)
+                )
+                stopRecordingHotkey()
+            }
+            // Only consume the event while actively recording
+            return isRecordingHotkey ? nil : event
+        }
+    }
+
+    private func stopRecordingHotkey() {
+        if let monitor = eventMonitor {
+            NSEvent.removeMonitor(monitor)
+            eventMonitor = nil
+        }
+        isRecordingHotkey = false
     }
 }
 
@@ -302,6 +364,7 @@ struct ModelSettingsTab: View {
 // MARK: - About Tab
 
 struct AboutSettingsTab: View {
+    @Environment(UpdaterService.self) private var updaterService
     private let repoURL = URL(string: "https://github.com/Ionmi/OpenWhisper")!
     private let issuesURL = URL(string: "https://github.com/Ionmi/OpenWhisper/issues")!
 
@@ -318,6 +381,18 @@ struct AboutSettingsTab: View {
                 Text("Local voice-to-text for macOS. Runs entirely on-device using OpenAI's Whisper model.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
+            }
+
+            if updaterService.isEnabled {
+                Section("Updates") {
+                    Button("Check for Updates…") {
+                        updaterService.checkForUpdates()
+                    }
+                    .disabled(!updaterService.canCheckForUpdates)
+
+                    @Bindable var updater = updaterService
+                    Toggle("Automatically check for updates", isOn: $updater.automaticallyChecksForUpdates)
+                }
             }
 
             Section("Links") {
@@ -368,6 +443,14 @@ struct AudioSettingsTab: View {
                 Text("Reduces background noise (fan, keyboard, street).")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                Text("AEC and noise suppression work together as a unit.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Text("Changes take effect on next app launch.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
             }
 
             Section("Voice Detection") {
@@ -509,6 +592,11 @@ struct ContextModesSettingsTab: View {
             entries = config.entries
             defaultTone = config.defaultTone
         }
+        .onChange(of: defaultTone) {
+            let config = ContextModeConfig(entries: entries, defaultTone: defaultTone)
+            JSONStorageAdapter.save(config, to: "context-modes.json")
+            appState.updateLLMConfiguration()
+        }
     }
 }
 
@@ -523,6 +611,7 @@ struct LLMSettingsTab: View {
             Section {
                 Toggle("Enable LLM Post-Processing", isOn: $llmSettings.isEnabled)
                     .toggleStyle(.switch)
+                    .tint(.green)
 
                 Text("Uses AI to fix self-corrections, adjust tone, and improve grammar.")
                     .font(.caption)
@@ -537,19 +626,63 @@ struct LLMSettingsTab: View {
                         }
                     }
                     .pickerStyle(.segmented)
+                    .onChange(of: llmSettings.source) {
+                        appState.updateLLMConfiguration()
+                    }
                 }
 
                 if llmSettings.source == .local {
                     Section("Local Model") {
                         if let manager = appState.llmModelManager {
                             if manager.availableLocalModels.isEmpty {
-                                Text("No models downloaded yet.")
+                                Label("No models downloaded yet. Download one below.", systemImage: "arrow.down.circle")
+                                    .font(.callout)
                                     .foregroundStyle(.secondary)
                             } else {
-                                Picker("Model", selection: $llmSettings.selectedLocalModel) {
-                                    ForEach(manager.availableLocalModels, id: \.self) { model in
-                                        Text(model).tag(model)
+                                if manager.availableLocalModels.count == 1 {
+                                    // Single model — just show it, auto-select
+                                    let model = manager.availableLocalModels[0]
+                                    LabeledContent("Model") {
+                                        Text(model)
+                                            .foregroundStyle(.secondary)
                                     }
+                                    .onAppear {
+                                        if llmSettings.selectedLocalModel != model {
+                                            llmSettings.selectedLocalModel = model
+                                            Task { await appState.loadLocalLLMModel(model) }
+                                        }
+                                    }
+                                } else {
+                                    Picker("Model", selection: $llmSettings.selectedLocalModel) {
+                                        ForEach(manager.availableLocalModels, id: \.self) { model in
+                                            Text(model).tag(model)
+                                        }
+                                    }
+                                    .onChange(of: llmSettings.selectedLocalModel) {
+                                        if !llmSettings.selectedLocalModel.isEmpty {
+                                            Task {
+                                                await appState.loadLocalLLMModel(llmSettings.selectedLocalModel)
+                                            }
+                                        }
+                                    }
+                                    .onAppear {
+                                        if llmSettings.selectedLocalModel.isEmpty,
+                                           let first = manager.availableLocalModels.first {
+                                            llmSettings.selectedLocalModel = first
+                                            Task { await appState.loadLocalLLMModel(first) }
+                                        }
+                                    }
+                                }
+
+                                // Status
+                                if appState.localLLMAdapter?.isModelLoaded == true {
+                                    Label("Loaded", systemImage: "checkmark.circle.fill")
+                                        .font(.caption)
+                                        .foregroundStyle(.green)
+                                } else {
+                                    Label("Loading model...", systemImage: "arrow.trianglehead.2.clockwise")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
                                 }
                             }
 
@@ -563,21 +696,38 @@ struct LLMSettingsTab: View {
                         }
                     }
 
-                    Section("Available Models") {
+                    Section("Models") {
                         ForEach(LLMModelManager.recommendedModels) { model in
+                            let isDownloaded = appState.llmModelManager?.availableLocalModels.contains(model.filename) == true
+                            let isActive = llmSettings.selectedLocalModel == model.filename
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(model.name)
-                                        .fontWeight(.medium)
+                                    HStack(spacing: 4) {
+                                        Text(model.name)
+                                            .fontWeight(.medium)
+                                        if isActive {
+                                            Text("Active")
+                                                .font(.caption2)
+                                                .padding(.horizontal, 5)
+                                                .padding(.vertical, 1)
+                                                .background(.green.opacity(0.15), in: Capsule())
+                                                .foregroundStyle(.green)
+                                        }
+                                    }
                                     Text("\(model.size) — \(model.languages) — \(model.license)")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
                                 Spacer()
-                                if appState.llmModelManager?.availableLocalModels.contains(model.filename) == true {
-                                    Label("Downloaded", systemImage: "checkmark.circle.fill")
-                                        .foregroundStyle(.green)
-                                        .font(.caption)
+                                if isDownloaded {
+                                    Button(role: .destructive) {
+                                        deleteModel(model.filename)
+                                    } label: {
+                                        Image(systemName: "trash")
+                                    }
+                                    .buttonStyle(.borderless)
+                                    .help("Delete model")
+                                    .disabled(isActive)
                                 } else {
                                     Button("Download") {
                                         Task {
@@ -588,6 +738,10 @@ struct LLMSettingsTab: View {
                                 }
                             }
                         }
+                    }
+
+                    Section("Memory") {
+                        LLMMemoryInfoView()
                     }
                 } else {
                     Section("Remote API") {
@@ -601,9 +755,97 @@ struct LLMSettingsTab: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
+                    .onChange(of: llmSettings.remoteBaseURL) { appState.updateLLMConfiguration() }
+                    .onChange(of: llmSettings.remoteModelName) { appState.updateLLMConfiguration() }
+                    .onChange(of: llmSettings.remoteAPIKey) { appState.updateLLMConfiguration() }
                 }
             }
         }
         .formStyle(.grouped)
+    }
+
+    private func deleteModel(_ filename: String) {
+        // If this is the active model, unload it first
+        if appState.llmSettings.selectedLocalModel == filename {
+            appState.localLLMAdapter?.unloadModel()
+            appState.llmSettings.selectedLocalModel = ""
+        }
+        try? appState.llmModelManager?.deleteModel(filename)
+        // Auto-select remaining model if only one left
+        if let remaining = appState.llmModelManager?.availableLocalModels,
+           remaining.count == 1, let only = remaining.first {
+            appState.llmSettings.selectedLocalModel = only
+            Task { await appState.loadLocalLLMModel(only) }
+        }
+    }
+}
+
+// MARK: - LLM Memory Info
+
+private struct LLMMemoryInfoView: View {
+    @State private var memoryInfo = MemoryInfo()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("System RAM")
+                    .font(.caption)
+                Spacer()
+                Text("\(memoryInfo.totalGB, specifier: "%.0f") GB total")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            ProgressView(value: memoryInfo.usedFraction)
+                .tint(memoryInfo.usedFraction > 0.85 ? .red : memoryInfo.usedFraction > 0.7 ? .orange : .blue)
+
+            HStack {
+                Text("\(memoryInfo.usedGB, specifier: "%.1f") GB used")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("\(memoryInfo.availableGB, specifier: "%.1f") GB available")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+
+        Text("Local models load entirely into memory (GPU via Metal on Apple Silicon). Choose a model that fits comfortably — if available RAM is low, transcription and other apps may slow down.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+    }
+}
+
+private struct MemoryInfo {
+    let totalGB: Double
+    let usedGB: Double
+    let availableGB: Double
+    var usedFraction: Double { totalGB > 0 ? usedGB / totalGB : 0 }
+
+    init() {
+        let total = Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824
+        var stats = vm_statistics64_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64_data_t>.stride / MemoryLayout<integer_t>.stride)
+        let pageSize = Double(vm_kernel_page_size)
+
+        let result = withUnsafeMutablePointer(to: &stats) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &count)
+            }
+        }
+
+        if result == KERN_SUCCESS {
+            let active = Double(stats.active_count) * pageSize / 1_073_741_824
+            let wired = Double(stats.wire_count) * pageSize / 1_073_741_824
+            let compressed = Double(stats.compressor_page_count) * pageSize / 1_073_741_824
+            let used = active + wired + compressed
+            totalGB = total
+            usedGB = min(used, total)
+            availableGB = max(total - used, 0)
+        } else {
+            totalGB = total
+            usedGB = 0
+            availableGB = total
+        }
     }
 }

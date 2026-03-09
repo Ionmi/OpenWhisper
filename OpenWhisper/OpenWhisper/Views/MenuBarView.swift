@@ -3,7 +3,7 @@ import SwiftUI
 struct MenuBarView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.openWindow) private var openWindow
-    @Environment(\.openSettings) private var openSettings
+
     @State private var copied = false
 
     var body: some View {
@@ -138,8 +138,12 @@ struct MenuBarView: View {
         }
 
         MenuItemButton("Settings…", systemImage: "gearshape") {
-            NSApp.activate(ignoringOtherApps: true)
-            openSettings()
+            openWindow(id: "settings")
+            DispatchQueue.main.async {
+                NSApp.activate(ignoringOtherApps: true)
+                NSApp.windows.first { $0.identifier?.rawValue.contains("settings") == true }?
+                    .makeKeyAndOrderFront(nil)
+            }
         }
         .keyboardShortcut(",", modifiers: .command)
 

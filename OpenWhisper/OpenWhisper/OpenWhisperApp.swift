@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct OpenWhisperApp: App {
     @State private var appState = AppState()
+    @State private var updaterService = UpdaterService()
     @State private var didAutoSetup = false
 
     var body: some Scene {
@@ -25,10 +26,14 @@ struct OpenWhisperApp: App {
         .windowResizability(.contentSize)
         .windowStyle(.titleBar)
 
-        Settings {
+        Window("OpenWhisper Settings", id: "settings") {
             SettingsView()
                 .environment(appState)
+                .environment(updaterService)
         }
+        .defaultPosition(.center)
+        .windowResizability(.contentSize)
+        .windowToolbarStyle(.unified(showsTitle: false))
     }
 
     private func performAutoSetupIfNeeded() {
