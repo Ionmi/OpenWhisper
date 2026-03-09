@@ -52,7 +52,24 @@ final class ModelManager {
 
     func deleteModel(_ name: String) throws {
         let modelDir = Constants.modelsDirectory.appendingPathComponent(name)
+        // Validate the resolved path is within the models directory to prevent path traversal
+        let resolvedPath = modelDir.standardizedFileURL.path
+        let basePath = Constants.modelsDirectory.standardizedFileURL.path
+        guard resolvedPath.hasPrefix(basePath + "/") else {
+            throw ModelManagerError.invalidModelPath
+        }
         try FileManager.default.removeItem(at: modelDir)
         refreshLocalModels()
+    }
+}
+
+enum ModelManagerError: LocalizedError {
+    case invalidModelPath
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidModelPath:
+            return "Invalid model path."
+        }
     }
 }

@@ -6,6 +6,7 @@ final class HotkeyService {
     private var runLoopSource: CFRunLoopSource?
     private var keyCode: UInt16
     private var modifiers: UInt32
+    private var retainedSelf: Unmanaged<HotkeyService>?
 
     /// Whether the service is actively listening (recording mode is on).
     var isActive = false
@@ -24,6 +25,10 @@ final class HotkeyService {
 
     /// Threshold in seconds: press shorter than this → toggle, longer → hold.
     private let autoHoldThreshold: CFAbsoluteTime = 0.3
+
+    /// Maximum number of retries when event tap creation fails.
+    private static let maxRetries = 5
+    private var retryCount = 0
 
     var onActivate: (() -> Void)?
     var onConfirm: (() -> Void)?
@@ -45,11 +50,18 @@ final class HotkeyService {
 
     func start() {
         stop()
+        retryCount = 0
+        attemptStart()
+    }
 
+    private func attemptStart() {
         let eventMask: CGEventMask =
             (1 << CGEventType.keyDown.rawValue) |
             (1 << CGEventType.keyUp.rawValue) |
             (1 << CGEventType.flagsChanged.rawValue)
+
+        // Retain self for the event tap callback lifetime
+        let retained = Unmanaged.passRetained(self)
 
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
@@ -57,25 +69,36 @@ final class HotkeyService {
             options: .defaultTap,
             eventsOfInterest: eventMask,
             callback: hotkeyCallback,
-            userInfo: Unmanaged.passUnretained(self).toOpaque()
+            userInfo: retained.toOpaque()
         ) else {
+            // Release since tap creation failed
+            retained.release()
+
             if !AXIsProcessTrusted() {
+                #if DEBUG
                 print("[HotkeyService] Failed to create event tap — Accessibility permission not granted.")
+                #endif
                 onEventTapFailed?()
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
-                guard let self, self.eventTap == nil else { return }
-                self.start()
+            retryCount += 1
+            if retryCount < Self.maxRetries {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                    guard let self, self.eventTap == nil else { return }
+                    self.attemptStart()
+                }
             }
             return
         }
+        retainedSelf = retained
         onEventTapCreated?()
 
         eventTap = tap
         runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
         CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
+        #if DEBUG
         print("[HotkeyService] Event tap created successfully.")
+        #endif
     }
 
     func stop() {
@@ -87,6 +110,9 @@ final class HotkeyService {
         }
         eventTap = nil
         runLoopSource = nil
+        // Release the retained reference used by the event tap callback
+        retainedSelf?.release()
+        retainedSelf = nil
         isActive = false
         isHotkeyHeld = false
         autoResolvedToToggle = false

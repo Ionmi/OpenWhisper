@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		7BBC86C02F5EC10000D0A40A /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 7BBC86BF2F5EC10000D0A40A /* WhisperKit */; };
+		7BBC86D12F5EC20000D0A40A /* SwiftLlama in Frameworks */ = {isa = PBXBuildFile; productRef = 7BBC86D02F5EC20000D0A40A /* SwiftLlama */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -28,6 +29,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				7BBC86C02F5EC10000D0A40A /* WhisperKit in Frameworks */,
+				7BBC86D12F5EC20000D0A40A /* SwiftLlama in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -71,6 +73,7 @@
 			name = OpenWhisper;
 			packageProductDependencies = (
 				7BBC86BF2F5EC10000D0A40A /* WhisperKit */,
+				7BBC86D02F5EC20000D0A40A /* SwiftLlama */,
 			);
 			productName = OpenWhisper;
 			productReference = 7BBC86A82F5EC06700D0A40A /* OpenWhisper.app */;
@@ -102,6 +105,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				7BBC86BE2F5EC10000D0A40A /* XCRemoteSwiftPackageReference "WhisperKit" */,
+				7BBC86CF2F5EC20000D0A40A /* XCRemoteSwiftPackageReference "swift-llama-cpp" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 7BBC86A92F5EC06700D0A40A /* Products */;
@@ -384,6 +388,14 @@
 				minimumVersion = 0.9.0;
 			};
 		};
+		7BBC86CF2F5EC20000D0A40A /* XCRemoteSwiftPackageReference "swift-llama-cpp" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/pgorzelany/swift-llama-cpp";
+			requirement = {
+				kind = branch;
+				branch = main;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -391,6 +403,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 7BBC86BE2F5EC10000D0A40A /* XCRemoteSwiftPackageReference "WhisperKit" */;
 			productName = WhisperKit;
+		};
+		7BBC86D02F5EC20000D0A40A /* SwiftLlama */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7BBC86CF2F5EC20000D0A40A /* XCRemoteSwiftPackageReference "swift-llama-cpp" */;
+			productName = SwiftLlama;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -1,5 +1,5 @@
 {
-  "originHash" : "be2b508cf91e00ccfdfd83e8177b94c9aee963c0dbf9b604f03fa19a3d85c0d4",
+  "originHash" : "68f24505f7a7f26cf4e0a4fe775d181569d035c3af19ce8ed6f44f90869b516c",
   "pins" : [
     {
       "identity" : "swift-argument-parser",
@@ -44,6 +44,15 @@
       "state" : {
         "revision" : "f731f03bf746481d4fda07f817c3774390c4d5b9",
         "version" : "2.3.2"
+      }
+    },
+    {
+      "identity" : "swift-llama-cpp",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/pgorzelany/swift-llama-cpp",
+      "state" : {
+        "branch" : "main",
+        "revision" : "3eed2ced5df8e2ca8569db9db6ea4488eb8b0dbc"
       }
     },
     {

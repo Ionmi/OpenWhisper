@@ -1,6 +1,8 @@
 import Foundation
+import SwiftLlama
 
 final class LocalLLMAdapter: LLMPort, @unchecked Sendable {
+    private var llamaService: LlamaService?
     private let lock = NSLock()
     private var _isModelLoaded = false
 
@@ -13,29 +15,48 @@ final class LocalLLMAdapter: LLMPort, @unchecked Sendable {
     func loadModel(name: String, path: URL) async throws {
         lock.lock()
         _isModelLoaded = false
+        llamaService = nil
         lock.unlock()
 
-        // TODO: Initialize llama.cpp context with the GGUF model at path
-        // let params = llama_model_default_params()
-        // params.n_gpu_layers = 99 // Use Metal for all layers
-        // let model = llama_load_model_from_file(path.path, params)
+        let service = LlamaService(
+            modelUrl: path,
+            config: .init(batchSize: 512, maxTokenCount: 2048, useGPU: true)
+        )
 
         lock.lock()
+        llamaService = service
         _isModelLoaded = true
         lock.unlock()
     }
 
     func generate(systemPrompt: String, userPrompt: String) async throws -> String {
-        guard isModelLoaded else {
+        lock.lock()
+        let service = llamaService
+        lock.unlock()
+
+        guard let service else {
             throw LLMError.modelNotLoaded
         }
 
-        // TODO: Run llama.cpp inference
-        return userPrompt // Placeholder — pass-through until llama.cpp is integrated
+        let messages: [LlamaChatMessage] = [
+            LlamaChatMessage(role: .system, content: systemPrompt),
+            LlamaChatMessage(role: .user, content: userPrompt),
+        ]
+
+        do {
+            let response = try await service.respond(
+                to: messages,
+                samplingConfig: .init(temperature: 0.1, seed: 42)
+            )
+            return response.trimmingCharacters(in: .whitespacesAndNewlines)
+        } catch {
+            throw LLMError.generationFailed(error.localizedDescription)
+        }
     }
 
     func unloadModel() {
         lock.lock()
+        llamaService = nil
         _isModelLoaded = false
         lock.unlock()
     }
