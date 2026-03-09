@@ -52,11 +52,8 @@ final class AppState {
     private var lastStreamedSampleCount = 0
     private var detectedLanguage = ""
 
-    // Progressive LLM state
-    private var progressiveLLMTask: Task<Void, Never>?
+    // LLM state
     private var lastLLMInputText = ""
-    private var progressiveRefinedText = ""
-    private var isProgressiveLLMRunning = false
 
     // MARK: - Recording
 
@@ -82,7 +79,6 @@ final class AppState {
         lastStreamedSampleCount = 0
         detectedLanguage = ""
         lastLLMInputText = ""
-        progressiveRefinedText = ""
         hotkeyService?.isActive = true
         floatingRecorder?.show()
 
@@ -103,7 +99,6 @@ final class AppState {
     func confirmRecording() {
         guard currentState == .recording else { return }
         stopStreamingTranscription()
-        stopProgressiveLLM()
         stopAudioLevelPolling()
         audioLevel = 0
         hotkeyService?.isActive = false
@@ -123,7 +118,7 @@ final class AppState {
             let audioSamples = audioCaptureService?.stopRecording() ?? []
 
             guard !audioSamples.isEmpty else {
-                floatingRecorder?.showConfirmation()
+                floatingRecorder?.hide()
                 streamedText = ""
                 currentState = .idle
                 return
@@ -187,7 +182,6 @@ final class AppState {
             // 6. LLM refinement — always run on the final transcription text.
             if llmSettings.isEnabled, llmAdapter?.isModelLoaded == true, let llmProcessor {
                 lastLLMInputText = ""
-                progressiveRefinedText = ""
 
                 currentState = .processing
                 floatingRecorder?.showProcessing()
@@ -198,9 +192,7 @@ final class AppState {
                     finalText = refined
                 }
             } else {
-
                 lastLLMInputText = ""
-                progressiveRefinedText = ""
             }
 
             // 7. Output — show confirmation now that all processing is done
@@ -233,9 +225,7 @@ final class AppState {
     func cancelRecording() {
         guard currentState == .recording else { return }
         stopStreamingTranscription()
-        stopProgressiveLLM()
         lastLLMInputText = ""
-        progressiveRefinedText = ""
         stopAudioLevelPolling()
         floatingRecorder?.hide()
         audioLevel = 0
@@ -248,63 +238,6 @@ final class AppState {
         currentState = .idle
         errorMessage = nil
     }
-
-    // MARK: - Progressive LLM
-
-    private func startProgressiveLLM() {
-        guard llmSettings.isEnabled, llmAdapter?.isModelLoaded == true, let llmProcessor else { return }
-
-        let processor = textProcessor
-        progressiveLLMTask = Task { @MainActor [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(1.0))
-                guard !Task.isCancelled, let self else { return }
-
-                let rawText = self.streamedText
-                let language = self.settings.selectedLanguage
-                let llmLang = self.detectedLanguage.isEmpty ? language : self.detectedLanguage
-
-                guard !rawText.isEmpty,
-                      rawText.count > 10,
-                      rawText != self.lastLLMInputText,
-                      !self.isProgressiveLLMRunning
-                else { continue }
-
-                self.isProgressiveLLMRunning = true
-                self.lastLLMInputText = rawText
-
-                // Apply same regex pipeline as confirmRecording (dictionary, fillers, punctuation)
-                // so the progressive result matches the final processed text.
-                var processedText = Self.cleanTranscription(rawText)
-                if let processor {
-                    processedText = processor.process(processedText, language: language)
-                }
-
-                guard !processedText.isEmpty, !Task.isCancelled else {
-                    self.isProgressiveLLMRunning = false
-                    continue
-                }
-
-                // Store processed text as the LLM input for comparison in confirmRecording
-                self.lastLLMInputText = processedText
-
-                let refined = try? await llmProcessor.process(processedText, language: llmLang)
-                guard !Task.isCancelled else { return }
-
-                if let refined, !refined.isEmpty, refined != processedText {
-                    self.progressiveRefinedText = refined
-                }
-                self.isProgressiveLLMRunning = false
-            }
-        }
-    }
-
-    private func stopProgressiveLLM() {
-        progressiveLLMTask?.cancel()
-        progressiveLLMTask = nil
-        isProgressiveLLMRunning = false
-    }
-
 
     // MARK: - Streaming Transcription
 
@@ -439,7 +372,7 @@ final class AppState {
         snippetAdapter = JSONSnippetAdapter()
         textProcessor = RegexTextProcessor(dictionaryAdapter: dictionary)
 
-        let vad = SileroVADAdapter()
+        let vad = EnergyVADAdapter()
         try? vad.loadModel()
         voiceActivityDetector = vad
 

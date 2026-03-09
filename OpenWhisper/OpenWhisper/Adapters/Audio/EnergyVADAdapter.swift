@@ -1,6 +1,6 @@
 import Foundation
 
-final class SileroVADAdapter: VoiceActivityPort {
+final class EnergyVADAdapter: VoiceActivityPort {
     private let speechThreshold: Float = 0.01
     private let frameDurationMs: Int = 100
     /// Extra samples to keep after each speech segment ends (prevents cutting last words)
@@ -8,7 +8,6 @@ final class SileroVADAdapter: VoiceActivityPort {
 
     func loadModel() throws {
         // Energy-based VAD — no model file needed
-        // Future: load Silero ONNX/CoreML model here
     }
 
     func detectSpeechSegments(in samples: [Float], sampleRate: Int) -> [(start: Int, end: Int)] {
