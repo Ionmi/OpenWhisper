@@ -16,14 +16,28 @@ final class AppState {
     var livePreviewText = ""
 
     let settings = AppSettings()
+    let audioSettings = AudioSettings()
+    let llmSettings = LLMSettings()
 
-    // Services
-    var audioCaptureService: AudioCaptureService?
+    // Services (existing)
+    var audioCaptureService: (any AudioCapturePort)?
     var transcriptionEngine: (any TranscriptionPort)?
     var hotkeyService: HotkeyService?
     var textOutputService: TextOutputService?
     var permissionsManager = PermissionsManager()
     var floatingRecorder: FloatingRecorderController?
+
+    // Services (v2)
+    var dictionaryAdapter: (any DictionaryPort)?
+    var snippetAdapter: (any SnippetPort)?
+    var textProcessor: (any TextProcessingPort)?
+    var voiceActivityDetector: (any VoiceActivityPort)?
+    var appDetector: (any AppDetectionPort)?
+    var llmModelManager: LLMModelManager?
+    var llmAdapter: (any LLMPort)?
+    var llmProcessor: LLMTextProcessor?
+    var autoDictionaryService: AutoDictionaryService?
+
     private var isSetUp = false
     private var audioLevelTimer: Timer?
 
@@ -90,11 +104,20 @@ final class AppState {
         Task {
             var finalText = streamedText
 
-            // Do one final transcription of the complete audio for best accuracy
+            // 1. Filter audio through VAD if enabled
+            var processedSamples = audioSamples
+            if audioSettings.vadEnabled, let vad = voiceActivityDetector {
+                let segments = vad.detectSpeechSegments(in: audioSamples, sampleRate: 16000)
+                if !segments.isEmpty {
+                    processedSamples = segments.flatMap { Array(audioSamples[$0.start..<min($0.end, audioSamples.count)]) }
+                }
+            }
+
+            // 2. Final transcription of the complete audio for best accuracy
             if let engine = transcriptionEngine {
                 do {
                     let text = try await engine.transcribe(
-                        audioSamples: audioSamples,
+                        audioSamples: processedSamples,
                         language: language == "auto" ? nil : language
                     )
                     let cleaned = Self.cleanTranscription(text)
@@ -112,6 +135,23 @@ final class AppState {
                 streamedText = ""
                 currentState = .idle
                 return
+            }
+
+            // 3. Check snippet match — if exact match, use snippet and skip processing
+            if let snippetMatch = snippetAdapter?.match(finalText) {
+                finalText = snippetMatch
+            } else {
+                // 4. Regex processing pipeline (dictionary, fillers, punctuation)
+                if let processor = textProcessor {
+                    finalText = processor.process(finalText, language: language)
+                }
+
+                // 5. LLM processing (if enabled)
+                if let llmProcessor, llmSettings.isEnabled {
+                    if let refined = try? await llmProcessor.process(finalText, language: language) {
+                        finalText = refined
+                    }
+                }
             }
 
             // Save to history
@@ -135,6 +175,9 @@ final class AppState {
             case .historyOnly:
                 break
             }
+
+            // 6. Start monitoring for dictionary auto-add
+            autoDictionaryService?.startMonitoring(transcribedText: finalText)
 
             streamedText = ""
             currentState = .idle
@@ -273,9 +316,34 @@ final class AppState {
     func setupServices() {
         guard !isSetUp else { return }
         isSetUp = true
-        audioCaptureService = AudioCaptureService()
+
+        // Audio capture: use voice processing (AEC + noise suppression) if enabled
+        if audioSettings.aecEnabled || audioSettings.noiseSuppressionEnabled {
+            audioCaptureService = VoiceProcessingAudioCapture()
+        } else {
+            audioCaptureService = AudioCaptureService()
+        }
+
         textOutputService = TextOutputService()
         floatingRecorder = FloatingRecorderController(appState: self)
+
+        // v2 services
+        let dictionary = JSONDictionaryAdapter()
+        dictionaryAdapter = dictionary
+        snippetAdapter = JSONSnippetAdapter()
+        textProcessor = RegexTextProcessor(dictionaryAdapter: dictionary)
+
+        let vad = SileroVADAdapter()
+        try? vad.loadModel()
+        voiceActivityDetector = vad
+
+        let detector = NSWorkspaceAppDetector()
+        appDetector = detector
+        llmModelManager = LLMModelManager()
+
+        let autoDict = AutoDictionaryService()
+        autoDict.configure(dictionaryAdapter: dictionary)
+        autoDictionaryService = autoDict
 
         let hotkeyService = HotkeyService(
             keyCode: settings.hotkeyKeyCode,
