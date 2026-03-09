@@ -10,6 +10,7 @@ struct OpenWhisperApp: App {
         MenuBarExtra {
             MenuBarView()
                 .environment(appState)
+                .environment(updaterService)
         } label: {
             StatusIndicatorView(state: appState.currentState)
                 .task {
@@ -26,14 +27,7 @@ struct OpenWhisperApp: App {
         .windowResizability(.contentSize)
         .windowStyle(.titleBar)
 
-        Window("OpenWhisper Settings", id: "settings") {
-            SettingsView()
-                .environment(appState)
-                .environment(updaterService)
-        }
-        .defaultPosition(.center)
-        .windowResizability(.contentSize)
-        .windowToolbarStyle(.unified(showsTitle: false))
+        // Settings window is managed by SettingsWindowController (AppKit)
     }
 
     private func performAutoSetupIfNeeded() {

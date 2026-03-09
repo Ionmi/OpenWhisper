@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 // MARK: - Settings Pages
@@ -36,60 +37,122 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     }
 }
 
-// MARK: - Settings View
+// MARK: - Navigation State
 
-struct SettingsView: View {
-    @Environment(AppState.self) private var appState
-    @State private var selectedPage: SettingsPage = .general
+@Observable
+final class SettingsNavigation {
+    var selectedPage: SettingsPage = .general
+}
 
-    var body: some View {
-        NavigationSplitView {
-            List(SettingsPage.allCases, selection: $selectedPage) { page in
-                Label(page.title, systemImage: page.icon)
-                    .tag(page)
-            }
-            .listStyle(.sidebar)
-            .navigationSplitViewColumnWidth(200)
-        } detail: {
-            settingsDetail
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .navigationTitle(selectedPage.title)
+// MARK: - Settings Window Controller (pure AppKit)
+
+final class SettingsWindowController: NSWindowController {
+    static var shared: SettingsWindowController?
+
+    static func show(appState: AppState, updaterService: UpdaterService) {
+        if let existing = shared {
+            existing.window?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
         }
-        .toolbar(removing: .sidebarToggle)
-        .navigationSplitViewStyle(.balanced)
-        .frame(width: 660, height: 480)
+
+        let controller = SettingsWindowController(appState: appState, updaterService: updaterService)
+        shared = controller
+        controller.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
-    @ViewBuilder
-    private var settingsDetail: some View {
-        switch selectedPage {
-        case .general:
-            GeneralSettingsTab()
-                .environment(appState)
-        case .shortcut:
-            HotkeySettingsTab()
-                .environment(appState)
-        case .model:
-            ModelSettingsTab()
-                .environment(appState)
-        case .appearance:
-            AppearanceSettingsTab()
-                .environment(appState)
-        case .audio:
-            AudioSettingsTab()
-                .environment(appState)
-        case .processing:
-            PostProcessingSettingsTab()
-                .environment(appState)
-        case .context:
-            ContextModesSettingsTab()
-                .environment(appState)
-        case .llm:
-            LLMSettingsTab()
-                .environment(appState)
-        case .about:
-            AboutSettingsTab()
+    private init(appState: AppState, updaterService: UpdaterService) {
+        let navigation = SettingsNavigation()
+
+        // Split view controller
+        let splitVC = NSSplitViewController()
+
+        // Sidebar
+        let sidebarHosting = NSHostingController(
+            rootView: SettingsSidebar(navigation: navigation)
+        )
+        let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebarHosting)
+        sidebarItem.canCollapse = false
+        sidebarItem.minimumThickness = 180
+        sidebarItem.maximumThickness = 240
+
+        // Detail
+        let detailHosting = NSHostingController(
+            rootView: SettingsDetailContent(navigation: navigation, appState: appState)
+                .environment(updaterService)
+        )
+        let detailItem = NSSplitViewItem(viewController: detailHosting)
+
+        splitVC.addSplitViewItem(sidebarItem)
+        splitVC.addSplitViewItem(detailItem)
+
+        // Window
+        let window = NSWindow(contentViewController: splitVC)
+        window.title = "OpenWhisper Settings"
+        window.styleMask = [.titled, .closable, .miniaturizable, .fullSizeContentView]
+        window.titleVisibility = .hidden
+        window.toolbarStyle = .unified
+        window.setContentSize(NSSize(width: 660, height: 480))
+        window.center()
+
+        let toolbar = NSToolbar()
+        toolbar.showsBaselineSeparator = false
+        window.toolbar = toolbar
+
+        super.init(window: window)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
+
+// MARK: - Sidebar (SwiftUI in NSHostingController)
+
+private struct SettingsSidebar: View {
+    @Bindable var navigation: SettingsNavigation
+
+    var body: some View {
+        List(SettingsPage.allCases, selection: $navigation.selectedPage) { page in
+            Label(page.title, systemImage: page.icon)
+                .tag(page)
         }
+        .listStyle(.sidebar)
+    }
+}
+
+// MARK: - Detail (SwiftUI in NSHostingController)
+
+private struct SettingsDetailContent: View {
+    var navigation: SettingsNavigation
+    let appState: AppState
+
+    var body: some View {
+        Group {
+            switch navigation.selectedPage {
+            case .general:
+                GeneralSettingsTab()
+            case .shortcut:
+                HotkeySettingsTab()
+            case .model:
+                ModelSettingsTab()
+            case .appearance:
+                AppearanceSettingsTab()
+            case .audio:
+                AudioSettingsTab()
+            case .processing:
+                PostProcessingSettingsTab()
+            case .context:
+                ContextModesSettingsTab()
+            case .llm:
+                LLMSettingsTab()
+            case .about:
+                AboutSettingsTab()
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .environment(appState)
     }
 }
 
