@@ -19,12 +19,19 @@ OpenWhisper processes all audio locally on your Mac. Your voice recordings are n
 - **Global hotkey** (Option + Space) — works from any app
 - **Three shortcut modes** — Auto (smart press/hold detection), Toggle, or Hold
 - **Streaming transcription** — see live text preview while you speak
+- **On-device LLM post-processing** — refine transcriptions with punctuation, capitalization, and grammar using local MLX models (Qwen3, Gemma, Phi-4) or a remote OpenAI-compatible API
+- **Context-aware tone** — automatic tone adjustment based on the active app (formal for Mail, casual for Slack, etc.)
+- **Voice Activity Detection** — energy-based VAD filters silence while preserving speech boundaries
+- **Voice processing** — echo cancellation (AEC) and noise suppression via Apple's Voice Processing I/O
+- **Text processing pipeline** — dictionary replacements, filler word removal, punctuation commands, and snippet expansion
+- **Auto-dictionary learning** — monitors corrections to learn custom word replacements
 - **13+ languages** with auto-detect
 - **10 Whisper models** — from tiny (fast) to large-v3 (accurate)
 - **Menu bar app** — lives in your status bar, out of your way
 - **Floating indicator** — pill or minimal style, 6 screen positions
 - **Multiple output modes** — paste at cursor, clipboard only, or history only
 - **Transcription history** — last 50 recordings accessible from the menu bar
+- **Native Settings UI** — macOS System Settings style with hardware-based LLM model recommendations
 - **Guided onboarding** — permissions setup and model download on first launch
 
 ## Installation
