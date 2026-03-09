@@ -3,6 +3,8 @@ import Foundation
 final class SileroVADAdapter: VoiceActivityPort {
     private let speechThreshold: Float = 0.01
     private let frameDurationMs: Int = 100
+    /// Extra samples to keep after each speech segment ends (prevents cutting last words)
+    private let tailMarginMs: Int = 300
 
     func loadModel() throws {
         // Energy-based VAD — no model file needed
@@ -12,6 +14,7 @@ final class SileroVADAdapter: VoiceActivityPort {
     func detectSpeechSegments(in samples: [Float], sampleRate: Int) -> [(start: Int, end: Int)] {
         var segments: [(start: Int, end: Int)] = []
         let frameSize = sampleRate * frameDurationMs / 1000
+        let tailMargin = sampleRate * tailMarginMs / 1000
         var speechStart: Int?
 
         for i in stride(from: 0, to: samples.count, by: frameSize) {
@@ -24,7 +27,7 @@ final class SileroVADAdapter: VoiceActivityPort {
                 }
             } else {
                 if let start = speechStart {
-                    segments.append((start: start, end: i))
+                    segments.append((start: start, end: min(i + tailMargin, samples.count)))
                     speechStart = nil
                 }
             }
@@ -34,7 +37,18 @@ final class SileroVADAdapter: VoiceActivityPort {
             segments.append((start: start, end: samples.count))
         }
 
-        return segments
+        // Merge overlapping segments caused by tail margin
+        guard !segments.isEmpty else { return segments }
+        var merged: [(start: Int, end: Int)] = [segments[0]]
+        for seg in segments.dropFirst() {
+            if seg.start <= merged[merged.count - 1].end {
+                merged[merged.count - 1] = (start: merged[merged.count - 1].start, end: max(merged[merged.count - 1].end, seg.end))
+            } else {
+                merged.append(seg)
+            }
+        }
+
+        return merged
     }
 
     func containsSpeech(_ samples: [Float], sampleRate: Int) -> Bool {

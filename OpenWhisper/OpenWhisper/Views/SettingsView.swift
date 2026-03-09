@@ -16,8 +16,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .appearance: "Appearance"
         case .audio: "Audio"
         case .processing: "Processing"
-        case .context: "Context"
-        case .llm: "LLM"
+        case .context: "Context (Beta)"
+        case .llm: "LLM (Beta)"
         case .about: "About"
         }
     }
@@ -710,7 +710,7 @@ struct LLMSettingsTab: View {
                     .toggleStyle(.switch)
                     .tint(.green)
 
-                Text("Uses AI to fix self-corrections, adjust tone, and improve grammar.")
+                Text("Uses AI to fix punctuation, apply dictionary corrections, and adjust tone. Results may vary with smaller models.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

@@ -65,7 +65,7 @@ final class MLXLLMAdapter: LLMPort, @unchecked Sendable {
         )
 
         let input = try await container.prepare(input: userInput)
-        let params = GenerateParameters(maxTokens: 512, temperature: 0.1)
+        let params = GenerateParameters(temperature: 0.1)
 
         var output = ""
         let stream = try await container.generate(input: input, parameters: params)

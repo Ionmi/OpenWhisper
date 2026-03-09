@@ -17,8 +17,13 @@ enum TranscriptionError: LocalizedError {
     }
 }
 
+struct TranscriptionOutput {
+    let text: String
+    let detectedLanguage: String
+}
+
 protocol TranscriptionPort: Sendable {
     func loadModel(name: String) async throws
-    func transcribe(audioSamples: [Float], language: String?) async throws -> String
+    func transcribe(audioSamples: [Float], language: String?) async throws -> TranscriptionOutput
     var isModelLoaded: Bool { get }
 }

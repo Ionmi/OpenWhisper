@@ -56,7 +56,7 @@ final class RemoteLLMAdapter: LLMPort, @unchecked Sendable {
                 ["role": "user", "content": userPrompt],
             ],
             "temperature": 0.1,
-            "max_tokens": 2048,
+            "max_tokens": 4096,
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 

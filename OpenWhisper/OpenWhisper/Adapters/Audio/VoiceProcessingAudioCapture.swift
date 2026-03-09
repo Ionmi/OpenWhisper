@@ -130,10 +130,11 @@ final class VoiceProcessingAudioCapture: AudioCapturePort {
         audioEngine.inputNode.removeTap(onBus: 0)
         audioEngine.stop()
 
-        // Disable voice processing on a default-QoS queue to avoid priority
-        // inversion when the caller is on the main (user-interactive) thread.
+        // Disable voice processing on a detached task so it doesn't block
+        // the caller. Use .default priority to match the QoS of the audio
+        // threads this call synchronises with, avoiding priority inversion.
         let engine = audioEngine
-        DispatchQueue.global(qos: .default).async {
+        Task.detached(priority: .medium) {
             try? engine.inputNode.setVoiceProcessingEnabled(false)
             engine.reset()
         }

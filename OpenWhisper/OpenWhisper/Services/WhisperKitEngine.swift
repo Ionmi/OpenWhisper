@@ -30,7 +30,7 @@ final class WhisperKitEngine: TranscriptionPort, @unchecked Sendable {
         }
     }
 
-    func transcribe(audioSamples: [Float], language: String?) async throws -> String {
+    func transcribe(audioSamples: [Float], language: String?) async throws -> TranscriptionOutput {
         let kit = lock.withLock { whisperKit }
 
         guard let kit else {
@@ -52,9 +52,11 @@ final class WhisperKitEngine: TranscriptionPort, @unchecked Sendable {
             .joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
+        let detectedLanguage = results.first?.language ?? language ?? "en"
+
         if text.isEmpty {
             throw TranscriptionError.transcriptionFailed("No speech detected.")
         }
-        return text
+        return TranscriptionOutput(text: text, detectedLanguage: detectedLanguage)
     }
 }

@@ -50,6 +50,7 @@ final class AppState {
     private var streamedWordCount = 0
     private var isStreamTranscribing = false
     private var lastStreamedSampleCount = 0
+    private var detectedLanguage = ""
 
     // Progressive LLM state
     private var progressiveLLMTask: Task<Void, Never>?
@@ -72,22 +73,29 @@ final class AppState {
             return
         }
 
+        // Show pill immediately for responsiveness, before audio engine starts.
+        currentState = .recording
+        errorMessage = nil
+        streamedText = ""
+        streamedWordCount = 0
+        livePreviewText = ""
+        lastStreamedSampleCount = 0
+        detectedLanguage = ""
+        lastLLMInputText = ""
+        progressiveRefinedText = ""
+        hotkeyService?.isActive = true
+        floatingRecorder?.show()
+
         do {
             try audioCaptureService.startRecording()
-            currentState = .recording
-            errorMessage = nil
-            streamedText = ""
-            streamedWordCount = 0
-            livePreviewText = ""
-            lastStreamedSampleCount = 0
-            hotkeyService?.isActive = true
-            floatingRecorder?.show()
             startAudioLevelPolling()
             startStreamingTranscription()
-            lastLLMInputText = ""
-            progressiveRefinedText = ""
             startProgressiveLLM()
         } catch {
+            // Audio failed — revert to idle
+            currentState = .idle
+            hotkeyService?.isActive = false
+            floatingRecorder?.hide()
             errorMessage = "Failed to start recording: \(error.localizedDescription)"
         }
     }
@@ -129,12 +137,8 @@ final class AppState {
 
             var finalText = streamedText
 
-            // 1. Pad with trailing silence so Whisper can properly
-            //    transcribe the very last words (avoids cut-off).
-            let silencePadding = [Float](repeating: 0, count: 4800) // 300ms at 16kHz
-            var processedSamples = audioSamples + silencePadding
-
-            // 2. Filter audio through VAD if enabled
+            // 1. Filter audio through VAD if enabled
+            var processedSamples = audioSamples
             if audioSettings.vadEnabled, let vad = voiceActivityDetector {
                 let segments = vad.detectSpeechSegments(in: audioSamples, sampleRate: 16000)
                 if !segments.isEmpty {
@@ -142,14 +146,20 @@ final class AppState {
                 }
             }
 
+            // 2. Pad with trailing silence so Whisper can properly
+            //    transcribe the very last words (avoids cut-off).
+            let silencePadding = [Float](repeating: 0, count: 4800) // 300ms at 16kHz
+            processedSamples += silencePadding
+
             // 3. Final transcription of the complete audio for best accuracy
             if let engine = transcriptionEngine {
                 do {
-                    let text = try await engine.transcribe(
+                    let output = try await engine.transcribe(
                         audioSamples: processedSamples,
                         language: language == "auto" ? nil : language
                     )
-                    let cleaned = Self.cleanTranscription(text)
+                    detectedLanguage = output.detectedLanguage
+                    let cleaned = Self.cleanTranscription(output.text)
                     if !cleaned.isEmpty {
                         finalText = cleaned
                     }
@@ -175,42 +185,18 @@ final class AppState {
                 }
             }
 
-            // 6. LLM refinement — use progressive result if ready, otherwise run synchronously.
-
+            // 6. LLM refinement — always run on the final transcription text.
             if llmSettings.isEnabled, llmAdapter?.isModelLoaded == true, let llmProcessor {
-                let progressiveResult = progressiveRefinedText
                 lastLLMInputText = ""
                 progressiveRefinedText = ""
 
-
-                if !progressiveResult.isEmpty, progressiveResult != finalText {
-
-                    currentState = .processing
-                    floatingRecorder?.showProcessing()
-                    try? await Task.sleep(for: .milliseconds(400))
-                    finalText = progressiveResult
-                } else {
-                    // No progressive result — run LLM with a tight timeout.
-                    currentState = .processing
-                    floatingRecorder?.showProcessing()
-                    let textToRefine = finalText
-                    let refined: String? = await withTaskGroup(of: String?.self) { group in
-                        group.addTask {
-                            try? await llmProcessor.process(textToRefine, language: language)
-                        }
-                        group.addTask {
-                            try? await Task.sleep(for: .seconds(3))
-                            return nil
-                        }
-                        for await result in group {
-                            group.cancelAll()
-                            return result
-                        }
-                        return nil
-                    }
-                    if let refined, !refined.isEmpty {
-                        finalText = refined
-                    }
+                currentState = .processing
+                floatingRecorder?.showProcessing()
+                let textToRefine = finalText
+                let llmLang = detectedLanguage.isEmpty ? language : detectedLanguage
+                if let refined = try? await llmProcessor.process(textToRefine, language: llmLang),
+                   !refined.isEmpty {
+                    finalText = refined
                 }
             } else {
 
@@ -277,6 +263,7 @@ final class AppState {
 
                 let rawText = self.streamedText
                 let language = self.settings.selectedLanguage
+                let llmLang = self.detectedLanguage.isEmpty ? language : self.detectedLanguage
 
                 guard !rawText.isEmpty,
                       rawText.count > 10,
@@ -302,7 +289,7 @@ final class AppState {
                 // Store processed text as the LLM input for comparison in confirmRecording
                 self.lastLLMInputText = processedText
 
-                let refined = try? await llmProcessor.process(processedText, language: language)
+                let refined = try? await llmProcessor.process(processedText, language: llmLang)
                 guard !Task.isCancelled else { return }
 
                 if let refined, !refined.isEmpty, refined != processedText {
@@ -352,17 +339,18 @@ final class AppState {
 
         Task {
             do {
-                let text = try await engine.transcribe(
+                let output = try await engine.transcribe(
                     audioSamples: samples,
                     language: language == "auto" ? nil : language
                 )
+                detectedLanguage = output.detectedLanguage
 
                 guard currentState == .recording else {
                     isStreamTranscribing = false
                     return
                 }
 
-                let cleaned = Self.cleanTranscription(text)
+                let cleaned = Self.cleanTranscription(output.text)
                 guard !cleaned.isEmpty else {
                     isStreamTranscribing = false
                     return
