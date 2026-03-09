@@ -1,10 +1,11 @@
 import AVFoundation
 import Foundation
+import os
 
 final class VoiceProcessingAudioCapture: AudioCapturePort {
     private var audioEngine = AVAudioEngine()
     private var audioBuffer: [Float] = []
-    private let bufferLock = NSLock()
+    private let bufferLock = OSAllocatedUnfairLock()
     private var isRecording = false
 
     var currentLevel: Float = 0
@@ -39,13 +40,24 @@ final class VoiceProcessingAudioCapture: AudioCapturePort {
             )
         } catch {
             #if DEBUG
-            print("[VoiceProcessingAudioCapture] Voice processing unavailable, using standard capture: \(error)")
+            print("[VoiceProcessingAudioCapture] Voice processing unavailable: \(error)")
             #endif
         }
 
-        let inputFormat = inputNode.outputFormat(forBus: 0)
-        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
+        let rawFormat = inputNode.outputFormat(forBus: 0)
+        guard rawFormat.sampleRate > 0, rawFormat.channelCount > 0 else {
             throw AudioCaptureError.noInputDevice
+        }
+
+        // VPIO outputs multi-channel (e.g. 9ch). Request mono in the tap so
+        // AVAudioEngine downmixes to the voice-processed signal automatically.
+        guard let monoFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: rawFormat.sampleRate,
+            channels: 1,
+            interleaved: false
+        ) else {
+            throw AudioCaptureError.formatError
         }
 
         guard let targetFormat = AVAudioFormat(
@@ -57,16 +69,16 @@ final class VoiceProcessingAudioCapture: AudioCapturePort {
             throw AudioCaptureError.formatError
         }
 
-        guard let converter = AVAudioConverter(from: inputFormat, to: targetFormat) else {
+        guard let converter = AVAudioConverter(from: monoFormat, to: targetFormat) else {
             throw AudioCaptureError.formatError
         }
 
-        inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) {
+        inputNode.installTap(onBus: 0, bufferSize: 4096, format: monoFormat) {
             [weak self] buffer, _ in
             guard let self else { return }
 
             let frameCount = AVAudioFrameCount(
-                Double(buffer.frameLength) * Self.targetSampleRate / inputFormat.sampleRate
+                Double(buffer.frameLength) * Self.targetSampleRate / monoFormat.sampleRate
             )
             guard frameCount > 0 else { return }
 
@@ -118,9 +130,13 @@ final class VoiceProcessingAudioCapture: AudioCapturePort {
         audioEngine.inputNode.removeTap(onBus: 0)
         audioEngine.stop()
 
-        // Disable voice processing so system audio volume returns to normal
-        try? audioEngine.inputNode.setVoiceProcessingEnabled(false)
-        audioEngine.reset()
+        // Disable voice processing on a default-QoS queue to avoid priority
+        // inversion when the caller is on the main (user-interactive) thread.
+        let engine = audioEngine
+        DispatchQueue.global(qos: .default).async {
+            try? engine.inputNode.setVoiceProcessingEnabled(false)
+            engine.reset()
+        }
 
         isRecording = false
 

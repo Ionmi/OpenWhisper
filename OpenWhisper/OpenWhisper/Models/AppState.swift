@@ -122,8 +122,12 @@ final class AppState {
 
             var finalText = streamedText
 
-            // 1. Filter audio through VAD if enabled
-            var processedSamples = audioSamples
+            // 1. Pad with trailing silence so Whisper can properly
+            //    transcribe the very last words (avoids cut-off).
+            let silencePadding = [Float](repeating: 0, count: 8000) // 500ms at 16kHz
+            var processedSamples = audioSamples + silencePadding
+
+            // 2. Filter audio through VAD if enabled
             if audioSettings.vadEnabled, let vad = voiceActivityDetector {
                 let segments = vad.detectSpeechSegments(in: audioSamples, sampleRate: 16000)
                 if !segments.isEmpty {
@@ -131,7 +135,7 @@ final class AppState {
                 }
             }
 
-            // 2. Final transcription of the complete audio for best accuracy
+            // 3. Final transcription of the complete audio for best accuracy
             if let engine = transcriptionEngine {
                 do {
                     let text = try await engine.transcribe(
@@ -154,17 +158,17 @@ final class AppState {
                 return
             }
 
-            // 3. Check snippet match — if exact match, use snippet and skip processing
+            // 4. Check snippet match — if exact match, use snippet and skip processing
             if let snippetMatch = snippetAdapter?.match(finalText) {
                 finalText = snippetMatch
             } else {
-                // 4. Regex processing pipeline (dictionary, fillers, punctuation)
+                // 5. Regex processing pipeline (dictionary, fillers, punctuation)
                 if let processor = textProcessor {
                     finalText = processor.process(finalText, language: language)
                 }
             }
 
-            // 5. LLM refinement — use progressive result if ready, otherwise run synchronously.
+            // 6. LLM refinement — use progressive result if ready, otherwise run synchronously.
 
             if llmSettings.isEnabled, llmAdapter?.isModelLoaded == true, let llmProcessor {
                 let progressiveResult = progressiveRefinedText
@@ -207,7 +211,7 @@ final class AppState {
                 progressiveRefinedText = ""
             }
 
-            // 6. Output — show confirmation now that all processing is done
+            // 7. Output — show confirmation now that all processing is done
             floatingRecorder?.showConfirmation()
             let result = TranscriptionResult(
                 text: finalText,
