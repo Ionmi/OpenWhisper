@@ -192,11 +192,14 @@ final class AppState {
                 let outputMode = settings.outputMode
 
                 let progressiveResult = progressiveRefinedText
+                let progressiveInputText = lastLLMInputText
                 lastLLMInputText = ""
                 progressiveRefinedText = ""
 
-                if !progressiveResult.isEmpty, progressiveResult != textToRefine {
-                    // Pre-computed result ready — apply immediately
+                if !progressiveResult.isEmpty,
+                   progressiveResult != textToRefine,
+                   progressiveInputText == textToRefine {
+                    // Pre-computed result matches final text — apply immediately
                     applyRefinedText(original: textToRefine, refined: progressiveResult, result: result, outputMode: outputMode)
                 } else {
                     // Run one final LLM pass in background
@@ -239,11 +242,10 @@ final class AppState {
     private func startProgressiveLLM() {
         guard llmSettings.isEnabled, llmAdapter?.isModelLoaded == true, let llmProcessor else { return }
 
-        progressiveLLMTask = Task { [weak self] in
+        progressiveLLMTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1.5))
-                guard !Task.isCancelled else { return }
-                guard let self else { return }
+                guard !Task.isCancelled, let self else { return }
 
                 let currentText = self.streamedText
                 let language = self.settings.selectedLanguage

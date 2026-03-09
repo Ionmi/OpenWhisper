@@ -41,7 +41,9 @@ final class RemoteLLMAdapter: LLMPort, @unchecked Sendable {
             throw LLMError.modelNotLoaded
         }
 
-        let url = URL(string: "\(currentBaseURL)/chat/completions")!
+        guard let url = URL(string: "\(currentBaseURL)/chat/completions") else {
+            throw LLMError.generationFailed("Invalid base URL")
+        }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
