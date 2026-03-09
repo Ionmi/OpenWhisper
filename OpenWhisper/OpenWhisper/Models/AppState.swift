@@ -159,7 +159,25 @@ final class AppState {
                 }
             }
 
-            // 5. Output immediately — don't wait for LLM
+            // 5. Apply progressive LLM result if ready (computed during recording).
+            // No background replacement — user may submit text immediately after paste.
+            if llmSettings.isEnabled, llmAdapter?.isModelLoaded == true {
+                let progressiveResult = progressiveRefinedText
+                let progressiveInputText = lastLLMInputText
+                lastLLMInputText = ""
+                progressiveRefinedText = ""
+
+                if !progressiveResult.isEmpty,
+                   progressiveResult != finalText,
+                   progressiveInputText == finalText {
+                    finalText = progressiveResult
+                }
+            } else {
+                lastLLMInputText = ""
+                progressiveRefinedText = ""
+            }
+
+            // 6. Output
             let result = TranscriptionResult(
                 text: finalText,
                 timestamp: Date(),
@@ -184,36 +202,6 @@ final class AppState {
 
             streamedText = ""
             currentState = .idle
-
-            // 6. LLM refinement — use progressive result if available, otherwise background
-            if let llmProcessor, llmSettings.isEnabled, llmAdapter?.isModelLoaded == true {
-                let textToRefine = finalText
-                let lang = language
-                let outputMode = settings.outputMode
-
-                let progressiveResult = progressiveRefinedText
-                let progressiveInputText = lastLLMInputText
-                lastLLMInputText = ""
-                progressiveRefinedText = ""
-
-                if !progressiveResult.isEmpty,
-                   progressiveResult != textToRefine,
-                   progressiveInputText == textToRefine {
-                    // Pre-computed result matches final text — apply immediately
-                    applyRefinedText(original: textToRefine, refined: progressiveResult, result: result, outputMode: outputMode)
-                } else {
-                    // Run one final LLM pass in background
-                    Task.detached { [weak self] in
-                        guard let self,
-                              let refined = try? await llmProcessor.process(textToRefine, language: lang),
-                              !refined.isEmpty, refined != textToRefine
-                        else { return }
-                        await MainActor.run { [self] in
-                            self.applyRefinedText(original: textToRefine, refined: refined, result: result, outputMode: outputMode)
-                        }
-                    }
-                }
-            }
         }
     }
 
@@ -292,22 +280,6 @@ final class AppState {
         isProgressiveLLMRunning = false
     }
 
-    private func applyRefinedText(original: String, refined: String, result: TranscriptionResult, outputMode: Constants.OutputMode) {
-        if lastTranscription?.text == original {
-            lastTranscription = TranscriptionResult(text: refined, timestamp: result.timestamp, duration: result.duration)
-        }
-        if let idx = transcriptionHistory.firstIndex(where: { $0.text == original }) {
-            transcriptionHistory[idx] = TranscriptionResult(text: refined, timestamp: result.timestamp, duration: result.duration)
-        }
-        switch outputMode {
-        case .pasteAutomatic:
-            textOutputService?.replaceText(old: original, with: refined)
-        case .clipboardOnly:
-            textOutputService?.copyToClipboard(refined)
-        case .historyOnly:
-            break
-        }
-    }
 
     // MARK: - Streaming Transcription
 
