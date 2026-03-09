@@ -50,6 +50,12 @@ final class AppState {
     private var isStreamTranscribing = false
     private var lastStreamedSampleCount = 0
 
+    // Progressive LLM state
+    private var progressiveLLMTask: Task<Void, Never>?
+    private var lastLLMInputText = ""
+    private var progressiveRefinedText = ""
+    private var isProgressiveLLMRunning = false
+
     // MARK: - Recording
 
     func startRecording() {
@@ -77,6 +83,9 @@ final class AppState {
             floatingRecorder?.show()
             startAudioLevelPolling()
             startStreamingTranscription()
+            lastLLMInputText = ""
+            progressiveRefinedText = ""
+            startProgressiveLLM()
         } catch {
             errorMessage = "Failed to start recording: \(error.localizedDescription)"
         }
@@ -86,6 +95,7 @@ final class AppState {
     func confirmRecording() {
         guard currentState == .recording else { return }
         stopStreamingTranscription()
+        stopProgressiveLLM()
         stopAudioLevelPolling()
         audioLevel = 0
         hotkeyService?.isActive = false
@@ -175,40 +185,28 @@ final class AppState {
             streamedText = ""
             currentState = .idle
 
-            // 6. LLM refinement in background — replaces pasted text if it improves it
+            // 6. LLM refinement — use progressive result if available, otherwise background
             if let llmProcessor, llmSettings.isEnabled, llmAdapter?.isModelLoaded == true {
                 let textToRefine = finalText
                 let lang = language
                 let outputMode = settings.outputMode
-                Task.detached { [weak self] in
-                    guard let self,
-                          let refined = try? await llmProcessor.process(textToRefine, language: lang),
-                          !refined.isEmpty, refined != textToRefine
-                    else { return }
-                    await MainActor.run { [self] in
-                        // Update history with refined text
-                        if self.lastTranscription?.text == textToRefine {
-                            self.lastTranscription = TranscriptionResult(
-                                text: refined,
-                                timestamp: result.timestamp,
-                                duration: result.duration
-                            )
-                        }
-                        if let idx = self.transcriptionHistory.firstIndex(where: { $0.text == textToRefine }) {
-                            self.transcriptionHistory[idx] = TranscriptionResult(
-                                text: refined,
-                                timestamp: result.timestamp,
-                                duration: result.duration
-                            )
-                        }
-                        // Replace the already-pasted text
-                        switch outputMode {
-                        case .pasteAutomatic:
-                            self.textOutputService?.replaceText(old: textToRefine, with: refined)
-                        case .clipboardOnly:
-                            self.textOutputService?.copyToClipboard(refined)
-                        case .historyOnly:
-                            break
+
+                let progressiveResult = progressiveRefinedText
+                lastLLMInputText = ""
+                progressiveRefinedText = ""
+
+                if !progressiveResult.isEmpty, progressiveResult != textToRefine {
+                    // Pre-computed result ready — apply immediately
+                    applyRefinedText(original: textToRefine, refined: progressiveResult, result: result, outputMode: outputMode)
+                } else {
+                    // Run one final LLM pass in background
+                    Task.detached { [weak self] in
+                        guard let self,
+                              let refined = try? await llmProcessor.process(textToRefine, language: lang),
+                              !refined.isEmpty, refined != textToRefine
+                        else { return }
+                        await MainActor.run { [self] in
+                            self.applyRefinedText(original: textToRefine, refined: refined, result: result, outputMode: outputMode)
                         }
                     }
                 }
@@ -220,6 +218,9 @@ final class AppState {
     func cancelRecording() {
         guard currentState == .recording else { return }
         stopStreamingTranscription()
+        stopProgressiveLLM()
+        lastLLMInputText = ""
+        progressiveRefinedText = ""
         stopAudioLevelPolling()
         floatingRecorder?.hide()
         audioLevel = 0
@@ -231,6 +232,63 @@ final class AppState {
         livePreviewText = ""
         currentState = .idle
         errorMessage = nil
+    }
+
+    // MARK: - Progressive LLM
+
+    private func startProgressiveLLM() {
+        guard llmSettings.isEnabled, llmAdapter?.isModelLoaded == true, let llmProcessor else { return }
+
+        progressiveLLMTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1.5))
+                guard !Task.isCancelled else { return }
+                guard let self else { return }
+
+                let currentText = self.streamedText
+                let language = self.settings.selectedLanguage
+
+                guard !currentText.isEmpty,
+                      currentText.count > 10,
+                      currentText != self.lastLLMInputText,
+                      !self.isProgressiveLLMRunning
+                else { continue }
+
+                self.isProgressiveLLMRunning = true
+                self.lastLLMInputText = currentText
+
+                let refined = try? await llmProcessor.process(currentText, language: language)
+                guard !Task.isCancelled else { return }
+
+                if let refined, !refined.isEmpty, refined != currentText {
+                    self.progressiveRefinedText = refined
+                }
+                self.isProgressiveLLMRunning = false
+            }
+        }
+    }
+
+    private func stopProgressiveLLM() {
+        progressiveLLMTask?.cancel()
+        progressiveLLMTask = nil
+        isProgressiveLLMRunning = false
+    }
+
+    private func applyRefinedText(original: String, refined: String, result: TranscriptionResult, outputMode: Constants.OutputMode) {
+        if lastTranscription?.text == original {
+            lastTranscription = TranscriptionResult(text: refined, timestamp: result.timestamp, duration: result.duration)
+        }
+        if let idx = transcriptionHistory.firstIndex(where: { $0.text == original }) {
+            transcriptionHistory[idx] = TranscriptionResult(text: refined, timestamp: result.timestamp, duration: result.duration)
+        }
+        switch outputMode {
+        case .pasteAutomatic:
+            textOutputService?.replaceText(old: original, with: refined)
+        case .clipboardOnly:
+            textOutputService?.copyToClipboard(refined)
+        case .historyOnly:
+            break
+        }
     }
 
     // MARK: - Streaming Transcription
