@@ -1,7 +1,7 @@
 import AVFoundation
 import Foundation
 
-final class AudioCaptureService {
+final class AudioCaptureService: AudioCapturePort {
     private let audioEngine = AVAudioEngine()
     private var audioBuffer: [Float] = []
     private let bufferLock = NSLock()

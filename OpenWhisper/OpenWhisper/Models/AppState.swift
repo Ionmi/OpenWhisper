@@ -19,7 +19,7 @@ final class AppState {
 
     // Services
     var audioCaptureService: AudioCaptureService?
-    var transcriptionEngine: (any TranscriptionEngine)?
+    var transcriptionEngine: (any TranscriptionPort)?
     var hotkeyService: HotkeyService?
     var textOutputService: TextOutputService?
     var permissionsManager = PermissionsManager()
