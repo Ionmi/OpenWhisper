@@ -46,8 +46,11 @@ final class SettingsNavigation {
 
 // MARK: - Settings Window Controller (pure AppKit)
 
-final class SettingsWindowController: NSWindowController {
+final class SettingsWindowController: NSWindowController, NSToolbarDelegate {
     static var shared: SettingsWindowController?
+
+    private static let trackingSeparatorID = NSToolbarItem.Identifier("sidebarTrackingSeparator")
+    private var splitViewController: NSSplitViewController!
 
     static func show(appState: AppState, updaterService: UpdaterService) {
         if let existing = shared {
@@ -76,6 +79,7 @@ final class SettingsWindowController: NSWindowController {
         sidebarItem.canCollapse = false
         sidebarItem.minimumThickness = 180
         sidebarItem.maximumThickness = 240
+        sidebarItem.titlebarSeparatorStyle = .none
 
         // Detail
         let detailHosting = NSHostingController(
@@ -83,6 +87,7 @@ final class SettingsWindowController: NSWindowController {
                 .environment(updaterService)
         )
         let detailItem = NSSplitViewItem(viewController: detailHosting)
+        detailItem.titlebarSeparatorStyle = .line
 
         splitVC.addSplitViewItem(sidebarItem)
         splitVC.addSplitViewItem(detailItem)
@@ -96,15 +101,42 @@ final class SettingsWindowController: NSWindowController {
         window.setContentSize(NSSize(width: 660, height: 480))
         window.center()
 
-        let toolbar = NSToolbar()
-        toolbar.showsBaselineSeparator = false
-        window.toolbar = toolbar
+        self.splitViewController = splitVC
 
         super.init(window: window)
+
+        // Toolbar with only a tracking separator — sidebar extends behind traffic lights,
+        // detail has no empty header because there are no items after the separator.
+        let toolbar = NSToolbar(identifier: "SettingsToolbar")
+        toolbar.delegate = self
+        toolbar.displayMode = .iconOnly
+        toolbar.showsBaselineSeparator = false
+        window.toolbar = toolbar
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    // MARK: - NSToolbarDelegate
+
+    func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
+        if itemIdentifier == Self.trackingSeparatorID {
+            return NSTrackingSeparatorToolbarItem(
+                identifier: itemIdentifier,
+                splitView: splitViewController.splitView,
+                dividerIndex: 0
+            )
+        }
+        return nil
+    }
+
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [Self.trackingSeparatorID]
+    }
+
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [Self.trackingSeparatorID]
     }
 }
 

@@ -139,7 +139,12 @@ struct MenuBarView: View {
         }
 
         MenuItemButton("Settings…", systemImage: "gearshape") {
-            SettingsWindowController.show(appState: appState, updaterService: updaterService)
+            let app = appState
+            let updater = updaterService
+            NSApp.keyWindow?.close()
+            DispatchQueue.main.async {
+                SettingsWindowController.show(appState: app, updaterService: updater)
+            }
         }
         .keyboardShortcut(",", modifiers: .command)
 
