@@ -797,6 +797,7 @@ struct LLMSettingsTab: View {
                         ForEach(LLMModelManager.recommendedModels) { model in
                             let isDownloaded = appState.llmModelManager?.availableLocalModels.contains(model.filename) == true
                             let isActive = llmSettings.selectedLocalModel == model.filename
+                            let isRecommended = model.id == MachineProfile.current.recommendedModelID
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
                                     HStack(spacing: 4) {
@@ -810,10 +811,25 @@ struct LLMSettingsTab: View {
                                                 .background(.green.opacity(0.15), in: Capsule())
                                                 .foregroundStyle(.green)
                                         }
+                                        if isRecommended {
+                                            Text("Recommended")
+                                                .font(.caption2)
+                                                .padding(.horizontal, 5)
+                                                .padding(.vertical, 1)
+                                                .background(.blue.opacity(0.15), in: Capsule())
+                                                .foregroundStyle(.blue)
+                                        }
                                     }
-                                    Text("\(model.size) — \(model.languages) — \(model.license)")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
+                                    HStack(spacing: 4) {
+                                        Text("\(model.size) — \(model.languages) — \(model.license)")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                        if isRecommended {
+                                            Text("~\(MachineProfile.current.estimatedTokensPerSec(modelSizeGB: model.sizeGB)) tok/s")
+                                                .font(.caption)
+                                                .foregroundStyle(.blue)
+                                        }
+                                    }
                                 }
                                 Spacer()
                                 if isDownloaded {
@@ -881,9 +897,13 @@ struct LLMSettingsTab: View {
 
 private struct LLMMemoryInfoView: View {
     @State private var memoryInfo = MemoryInfo()
+    private let profile = MachineProfile.current
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
+            Text(profile.summary)
+                .font(.caption)
+                .fontWeight(.medium)
             HStack {
                 Text("System RAM")
                     .font(.caption)

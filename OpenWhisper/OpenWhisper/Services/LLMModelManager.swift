@@ -17,6 +17,7 @@ final class LLMModelManager {
         let id: String
         let name: String
         let size: String
+        let sizeGB: Double
         let languages: String
         let license: String
         let huggingFaceRepo: String
@@ -28,6 +29,7 @@ final class LLMModelManager {
             id: "qwen3.5-4b",
             name: "Qwen3.5 4B (Recommended)",
             size: "~2.7 GB",
+            sizeGB: 2.7,
             languages: "201 languages",
             license: "Apache 2.0",
             huggingFaceRepo: "unsloth/Qwen3.5-4B-GGUF",
@@ -37,6 +39,7 @@ final class LLMModelManager {
             id: "gemma3-4b",
             name: "Gemma 3 4B IT",
             size: "~2.4 GB",
+            sizeGB: 2.4,
             languages: "140+ languages",
             license: "Gemma",
             huggingFaceRepo: "google/gemma-3-4b-it-qat-q4_0-gguf",
@@ -46,6 +49,7 @@ final class LLMModelManager {
             id: "phi4-mini",
             name: "Phi-4 Mini",
             size: "~2.5 GB",
+            sizeGB: 2.5,
             languages: "23 languages",
             license: "MIT",
             huggingFaceRepo: "bartowski/microsoft_Phi-4-mini-instruct-GGUF",
@@ -55,6 +59,7 @@ final class LLMModelManager {
             id: "qwen3.5-2b",
             name: "Qwen3.5 2B (Lightweight)",
             size: "~1.5 GB",
+            sizeGB: 1.5,
             languages: "201 languages",
             license: "Apache 2.0",
             huggingFaceRepo: "unsloth/Qwen3.5-2B-GGUF",
@@ -64,6 +69,7 @@ final class LLMModelManager {
             id: "gemma3n-e2b",
             name: "Gemma 3n E2B (Ultra-light)",
             size: "~1.2 GB",
+            sizeGB: 1.2,
             languages: "140+ languages",
             license: "Gemma",
             huggingFaceRepo: "unsloth/gemma-3n-E2B-it-GGUF",
@@ -89,6 +95,9 @@ final class LLMModelManager {
             .sorted()
     }
 
+    private var downloadDelegate: DownloadProgressDelegate?
+    private var downloadSession: URLSession?
+
     func downloadModel(_ model: RecommendedModel) async throws {
         isDownloading = true
         downloadProgress = 0
@@ -103,24 +112,39 @@ final class LLMModelManager {
             throw LLMModelError.invalidPath
         }
 
-        let (asyncBytes, response) = try await URLSession.shared.bytes(from: url)
-        let totalBytes = response.expectedContentLength
-
-        var data = Data()
-        if totalBytes > 0 {
-            data.reserveCapacity(Int(totalBytes))
-        }
-
-        for try await byte in asyncBytes {
-            data.append(byte)
-            if totalBytes > 0 {
-                downloadProgress = Double(data.count) / Double(totalBytes)
+        do {
+            let delegate = DownloadProgressDelegate { [weak self] progress in
+                Task { @MainActor in
+                    self?.downloadProgress = progress
+                }
             }
-        }
+            downloadDelegate = delegate
 
-        try data.write(to: destination, options: .atomic)
-        refreshLocalModels()
-        isDownloading = false
+            // Create a dedicated session so the delegate receives progress callbacks
+            let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
+            downloadSession = session
+
+            let (tempURL, _) = try await session.download(from: url)
+
+            // Remove any existing file at the destination before moving
+            if FileManager.default.fileExists(atPath: destination.path) {
+                try FileManager.default.removeItem(at: destination)
+            }
+            try FileManager.default.moveItem(at: tempURL, to: destination)
+
+            refreshLocalModels()
+            isDownloading = false
+            downloadDelegate = nil
+            downloadSession?.invalidateAndCancel()
+            downloadSession = nil
+        } catch {
+            isDownloading = false
+            downloadProgress = 0
+            downloadDelegate = nil
+            downloadSession?.invalidateAndCancel()
+            downloadSession = nil
+            throw error
+        }
     }
 
     func deleteModel(_ filename: String) throws {
@@ -132,6 +156,34 @@ final class LLMModelManager {
         }
         try FileManager.default.removeItem(at: modelFile)
         refreshLocalModels()
+    }
+}
+
+private final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelegate {
+    private let onProgress: @Sendable (Double) -> Void
+
+    init(onProgress: @escaping @Sendable (Double) -> Void) {
+        self.onProgress = onProgress
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didWriteData bytesWritten: Int64,
+        totalBytesWritten: Int64,
+        totalBytesExpectedToWrite: Int64
+    ) {
+        guard totalBytesExpectedToWrite > 0 else { return }
+        let progress = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
+        onProgress(progress)
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didFinishDownloadingTo location: URL
+    ) {
+        // Handled by the async download(from:) call; no action needed here.
     }
 }
 
