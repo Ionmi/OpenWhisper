@@ -86,6 +86,7 @@ final class SettingsWindowController: NSWindowController, NSToolbarDelegate {
             rootView: SettingsDetailContent(navigation: navigation, appState: appState)
                 .environment(updaterService)
         )
+        detailHosting.safeAreaRegions = []
         let detailItem = NSSplitViewItem(viewController: detailHosting)
         detailItem.titlebarSeparatorStyle = .line
 
@@ -184,6 +185,7 @@ private struct SettingsDetailContent: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.top, 8)
         .environment(appState)
     }
 }
