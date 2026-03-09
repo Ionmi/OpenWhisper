@@ -101,20 +101,27 @@ final class AppState {
         audioLevel = 0
         hotkeyService?.isActive = false
 
-        let audioSamples = audioCaptureService?.stopRecording() ?? []
+        // Change state immediately so UI updates, but keep audio engine
+        // running briefly to flush any pending buffers.
         currentState = .transcribing
         livePreviewText = ""
-
-        guard !audioSamples.isEmpty else {
-            floatingRecorder?.showConfirmation()
-            currentState = .idle
-            streamedText = ""
-            return
-        }
 
         let language = settings.selectedLanguage
 
         Task {
+            // Let the audio engine keep recording for a short window so
+            // any in-flight buffers are delivered to the tap callback.
+            try? await Task.sleep(for: .milliseconds(300))
+
+            let audioSamples = audioCaptureService?.stopRecording() ?? []
+
+            guard !audioSamples.isEmpty else {
+                floatingRecorder?.showConfirmation()
+                streamedText = ""
+                currentState = .idle
+                return
+            }
+
             defer {
                 streamedText = ""
                 currentState = .idle
@@ -124,7 +131,7 @@ final class AppState {
 
             // 1. Pad with trailing silence so Whisper can properly
             //    transcribe the very last words (avoids cut-off).
-            let silencePadding = [Float](repeating: 0, count: 8000) // 500ms at 16kHz
+            let silencePadding = [Float](repeating: 0, count: 4800) // 300ms at 16kHz
             var processedSamples = audioSamples + silencePadding
 
             // 2. Filter audio through VAD if enabled

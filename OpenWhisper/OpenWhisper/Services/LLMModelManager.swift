@@ -136,7 +136,6 @@ final class LLMModelManager {
                     }
                     self.lastCallbackTime = now
 
-                    let downloadedGB = self.downloadedBytes / 1_000_000_000
                     let realProgress = self.downloadedBytes / self.totalBytes
 
                     self.downloadProgress = realProgress

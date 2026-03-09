@@ -13,9 +13,9 @@ final class WhisperKitEngine: TranscriptionPort, @unchecked Sendable {
     }
 
     func loadModel(name: String) async throws {
-        lock.lock()
-        _isModelLoaded = false
-        lock.unlock()
+        lock.withLock {
+            _isModelLoaded = false
+        }
 
         let kit = try await WhisperKit(
             model: name,
@@ -24,16 +24,14 @@ final class WhisperKitEngine: TranscriptionPort, @unchecked Sendable {
             prewarm: true
         )
 
-        lock.lock()
-        whisperKit = kit
-        _isModelLoaded = true
-        lock.unlock()
+        lock.withLock {
+            whisperKit = kit
+            _isModelLoaded = true
+        }
     }
 
     func transcribe(audioSamples: [Float], language: String?) async throws -> String {
-        lock.lock()
-        let kit = whisperKit
-        lock.unlock()
+        let kit = lock.withLock { whisperKit }
 
         guard let kit else {
             throw TranscriptionError.modelNotLoaded
