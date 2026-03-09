@@ -90,7 +90,6 @@ final class AppState {
             try audioCaptureService.startRecording()
             startAudioLevelPolling()
             startStreamingTranscription()
-            startProgressiveLLM()
         } catch {
             // Audio failed — revert to idle
             currentState = .idle

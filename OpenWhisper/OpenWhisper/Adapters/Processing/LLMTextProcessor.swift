@@ -44,7 +44,7 @@ final class LLMTextProcessor {
     ]
 
     static func buildSystemPrompt(tone: String = "neutral", dictionaryTerms: String = "", language: String = "en") -> String {
-        let langName = languageNames[language] ?? "the same as the input"
+        let langName = languageNames[language] ?? language.uppercased()
         var rules = """
 You clean up dictated text. The text is in \(langName). Your output MUST be in \(langName). NEVER translate.
 Rules:
