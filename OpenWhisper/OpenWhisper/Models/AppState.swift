@@ -452,6 +452,19 @@ final class AppState {
             dictionaryAdapter: dictionary
         )
 
+        // Auto-select model if none selected but models are available
+        if llmSettings.selectedLocalModel.isEmpty,
+           let manager = llmModelManager,
+           !manager.availableLocalModels.isEmpty {
+            let recommended = MachineProfile.current.recommendedModelID
+            let recommendedFilename = LLMModelManager.recommendedModels.first(where: { $0.id == recommended })?.filename
+            if let filename = recommendedFilename, manager.availableLocalModels.contains(filename) {
+                llmSettings.selectedLocalModel = filename
+            } else if let first = manager.availableLocalModels.first {
+                llmSettings.selectedLocalModel = first
+            }
+        }
+
         // Auto-load local LLM model if one is selected
         if llmSettings.source == .local, !llmSettings.selectedLocalModel.isEmpty {
             let modelPath = LLMModelManager.modelsDirectory.appendingPathComponent(llmSettings.selectedLocalModel)
