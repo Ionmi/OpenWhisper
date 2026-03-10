@@ -28,7 +28,7 @@ jobs:
             -archivePath /tmp/OpenWhisper.xcarchive \
             CODE_SIGN_IDENTITY=- \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO
+            AD_HOC_CODE_SIGNING_ALLOWED=YES
 
       - name: Package .zip
         run: |
