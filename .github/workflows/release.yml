@@ -42,13 +42,15 @@ jobs:
           openssl pkcs12 -export -out /tmp/cert.p12 -inkey /tmp/key.pem -in /tmp/cert.pem \
             -passout pass:temp123 -legacy
 
-          # Import certificate into keychain
+          # Import certificate into keychain and trust it for codesigning
           security import /tmp/cert.p12 -k /tmp/build.keychain -P temp123 -T /usr/bin/codesign
+          sudo security add-trusted-cert -d -r trustRoot -k /tmp/build.keychain /tmp/cert.pem
           security set-key-partition-list -S apple-tool:,apple: -s -k "" /tmp/build.keychain
 
-          # Get the identity for use in build
-          IDENTITY=$(security find-identity -v -p codesigning /tmp/build.keychain | grep "OpenWhisper Release" | head -1 | awk -F'"' '{print $2}')
+          # Get the SHA-1 hash of the signing identity (more reliable than name matching)
+          IDENTITY=$(security find-identity -v -p codesigning /tmp/build.keychain | head -1 | awk '{print $2}')
           echo "CODESIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+          echo "Found identity: $IDENTITY"
 
       - name: Resolve packages
         run: xcodebuild -resolvePackageDependencies -project OpenWhisper/OpenWhisper.xcodeproj -scheme OpenWhisper
