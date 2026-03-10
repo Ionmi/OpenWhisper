@@ -10,15 +10,15 @@ enum SettingsPage: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .general: "General"
-        case .shortcut: "Shortcut"
-        case .model: "Model"
-        case .appearance: "Appearance"
-        case .audio: "Audio"
-        case .processing: "Processing"
-        case .context: "Context (Beta)"
-        case .llm: "LLM (Beta)"
-        case .about: "About"
+        case .general: String(localized: "General")
+        case .shortcut: String(localized: "Shortcut")
+        case .model: String(localized: "Model")
+        case .appearance: String(localized: "Appearance")
+        case .audio: String(localized: "Audio")
+        case .processing: String(localized: "Processing")
+        case .context: String(localized: "Context (Beta)")
+        case .llm: String(localized: "LLM (Beta)")
+        case .about: String(localized: "About")
         }
     }
 
@@ -205,6 +205,18 @@ struct GeneralSettingsTab: View {
                     ForEach(Constants.SupportedLanguages.all, id: \.code) { lang in
                         Text(lang.name).tag(lang.code)
                     }
+                }
+
+                Picker("App Language", selection: $settings.uiLanguage) {
+                    Text("Auto").tag(Constants.SupportedUILanguages.defaultLanguage)
+                    Text("English").tag("en")
+                    Text("Español").tag("es")
+                }
+
+                if OpenWhisperApp.resolveLanguageCode(for: settings.uiLanguage) != OpenWhisperApp.appliedLanguageCode {
+                    Text("Restart required to apply language change.")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
                 }
             }
 

@@ -23,6 +23,10 @@ final class AppSettings {
         didSet { save(selectedLanguage, forKey: Constants.Defaults.selectedLanguage) }
     }
 
+    var uiLanguage: String {
+        didSet { save(uiLanguage, forKey: Constants.Defaults.uiLanguage) }
+    }
+
     var onboardingCompleted: Bool {
         didSet { save(onboardingCompleted, forKey: Constants.Defaults.onboardingCompleted) }
     }
@@ -131,6 +135,7 @@ final class AppSettings {
             showLivePreview = true
         }
 
+        uiLanguage = d.string(forKey: Constants.Defaults.uiLanguage) ?? Constants.SupportedUILanguages.defaultLanguage
         launchAtLogin = SMAppService.mainApp.status == .enabled
     }
 

@@ -6,6 +6,38 @@ struct OpenWhisperApp: App {
     @State private var updaterService = UpdaterService()
     @State private var didAutoSetup = false
 
+    init() {
+        Self.applyStoredLanguage()
+    }
+
+    /// The language code that was actually applied at launch ("en", "es", …).
+    static private(set) var appliedLanguageCode: String = "en"
+
+    /// Language codes supported for UI localization beyond English.
+    private static let supportedUICodes: Set<String> = ["es"]
+
+    /// Resolves a stored uiLanguage value ("auto", "en", "es", …) to an actual
+    /// language code, applying the same logic used at launch.
+    static func resolveLanguageCode(for stored: String) -> String {
+        if stored == Constants.SupportedUILanguages.defaultLanguage {
+            let systemCode = Locale.current.language.languageCode?.identifier ?? "en"
+            return supportedUICodes.contains(systemCode) ? systemCode : "en"
+        }
+        return stored
+    }
+
+    /// Reads the stored uiLanguage preference and applies it to AppleLanguages
+    /// so SwiftUI picks up the correct locale for all String(localized:) lookups.
+    /// Must run before any UI is created.
+    private static func applyStoredLanguage() {
+        let stored = UserDefaults.standard.string(forKey: Constants.Defaults.uiLanguage)
+            ?? Constants.SupportedUILanguages.defaultLanguage
+        let code = resolveLanguageCode(for: stored)
+        appliedLanguageCode = code
+        UserDefaults.standard.set([code], forKey: "AppleLanguages")
+        UserDefaults.standard.synchronize()
+    }
+
     var body: some Scene {
         MenuBarExtra {
             MenuBarView()

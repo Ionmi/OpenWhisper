@@ -105,6 +105,7 @@
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
+				es,
 				Base,
 			);
 			mainGroup = 7BBC869F2F5EC06700D0A40A;
@@ -296,13 +297,13 @@
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "OpenWhisper needs microphone access to record your voice for transcription.";
-				INFOPLIST_KEY_SUFeedURL = "https://github.com/Ionmi/OpenWhisper/releases.atom";
+				INFOPLIST_KEY_SUFeedURL = "https://raw.githubusercontent.com/Ionmi/OpenWhisper/main/appcast.xml";
 				INFOPLIST_KEY_SUPublicEDKey = "aWflUEPCPGqa6jkgy8ucggsmYuKEnk7RuA0TiyvzC+o=";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2.0;
+				MARKETING_VERSION = 2.1;
 				PRODUCT_BUNDLE_IDENTIFIER = me.OpenWhisper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -346,13 +347,13 @@
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "OpenWhisper needs microphone access to record your voice for transcription.";
-				INFOPLIST_KEY_SUFeedURL = "https://github.com/Ionmi/OpenWhisper/releases.atom";
+				INFOPLIST_KEY_SUFeedURL = "https://raw.githubusercontent.com/Ionmi/OpenWhisper/main/appcast.xml";
 				INFOPLIST_KEY_SUPublicEDKey = "aWflUEPCPGqa6jkgy8ucggsmYuKEnk7RuA0TiyvzC+o=";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2.0;
+				MARKETING_VERSION = 2.1;
 				PRODUCT_BUNDLE_IDENTIFIER = me.OpenWhisper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -413,7 +414,7 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/ml-explore/mlx-swift-lm";
 			requirement = {
-				kind = upToNextMinorVersion;
+				kind = upToNextMajorVersion;
 				minimumVersion = 2.29.1;
 			};
 		};

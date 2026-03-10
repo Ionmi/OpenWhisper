@@ -172,16 +172,16 @@ struct MenuBarView: View {
 
     private var statusText: String {
         if appState.isLoadingModel {
-            return "Loading…"
+            return String(localized: "Loading…")
         }
         if !appState.isModelLoaded && appState.currentState == .idle {
-            return "No Model"
+            return String(localized: "No Model")
         }
         return switch appState.currentState {
-        case .idle: "Ready"
-        case .recording: "Recording…"
-        case .transcribing: "Transcribing…"
-        case .processing: "Processing…"
+        case .idle: String(localized: "Ready")
+        case .recording: String(localized: "Recording…")
+        case .transcribing: String(localized: "Transcribing…")
+        case .processing: String(localized: "Processing…")
         }
     }
 }
