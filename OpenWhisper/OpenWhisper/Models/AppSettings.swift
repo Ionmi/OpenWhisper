@@ -23,6 +23,10 @@ final class AppSettings {
         didSet { save(selectedLanguage, forKey: Constants.Defaults.selectedLanguage) }
     }
 
+    var uiLanguage: String {
+        didSet { save(uiLanguage, forKey: Constants.Defaults.uiLanguage) }
+    }
+
     var onboardingCompleted: Bool {
         didSet { save(onboardingCompleted, forKey: Constants.Defaults.onboardingCompleted) }
     }
@@ -45,10 +49,6 @@ final class AppSettings {
 
     var showLivePreview: Bool {
         didSet { save(showLivePreview, forKey: Constants.Defaults.showLivePreview) }
-    }
-
-    var uiLanguage: String {
-        didSet { save(uiLanguage, forKey: Constants.Defaults.uiLanguage) }
     }
 
     var launchAtLogin: Bool {
@@ -135,7 +135,7 @@ final class AppSettings {
             showLivePreview = true
         }
 
-        uiLanguage = d.string(forKey: Constants.Defaults.uiLanguage) ?? "auto"
+        uiLanguage = d.string(forKey: Constants.Defaults.uiLanguage) ?? Constants.SupportedUILanguages.defaultLanguage
         launchAtLogin = SMAppService.mainApp.status == .enabled
     }
 

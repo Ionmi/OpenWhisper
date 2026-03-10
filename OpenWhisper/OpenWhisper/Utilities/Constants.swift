@@ -170,4 +170,8 @@ enum Constants {
         ]
         static let defaultLanguage = "en"
     }
+
+    enum SupportedUILanguages {
+        static let defaultLanguage = "auto"
+    }
 }
