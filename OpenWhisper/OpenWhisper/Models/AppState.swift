@@ -552,4 +552,11 @@ final class AppState {
             isLoadingModel = false
         }
     }
+
+    func deleteWhisperModel(_ modelID: String) {
+        if settings.selectedModel == modelID {
+            isModelLoaded = false
+        }
+        try? modelManager.deleteModel(modelID)
+    }
 }

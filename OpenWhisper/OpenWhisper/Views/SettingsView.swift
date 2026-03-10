@@ -445,10 +445,7 @@ struct ModelSettingsTab: View {
                             settings.selectedModel = model.id
                             Task { await appState.loadTranscriptionEngine() }
                         } onDelete: {
-                            if settings.selectedModel == model.id {
-                                appState.isModelLoaded = false
-                            }
-                            try? appState.modelManager.deleteModel(model.id)
+                            appState.deleteWhisperModel(model.id)
                         }
                     }
                 }
@@ -535,7 +532,7 @@ private struct WhisperModelRow: View {
                 }
             }
             if isDownloadingThis {
-                ProgressView(value: downloadProgress)
+                ProgressView()
                     .progressViewStyle(.linear)
             }
         }
