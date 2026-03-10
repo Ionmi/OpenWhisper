@@ -497,15 +497,11 @@ private struct WhisperModelRow: View {
                 }
                 Spacer()
                 if isDownloadingThis {
-                    HStack(spacing: 6) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text(downloadProgress > 0 && downloadProgress < 1
-                             ? "\(Int(downloadProgress * 100))%"
-                             : "Loading…")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+                    Text(downloadProgress > 0 && downloadProgress < 1
+                         ? "\(Int(downloadProgress * 100))%"
+                         : "Loading…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 } else {
                     HStack(spacing: 8) {
                         if isCached {
@@ -534,7 +530,7 @@ private struct WhisperModelRow: View {
                 }
             }
             if isDownloadingThis {
-                ProgressView(value: downloadProgress > 0 ? downloadProgress : nil)
+                ProgressView(value: downloadProgress)
                     .progressViewStyle(.linear)
             }
         }
@@ -846,13 +842,9 @@ struct LLMSettingsTab: View {
                             }
                             Spacer()
                             if isDownloadingThis {
-                                HStack(spacing: 6) {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                    Text(appState.llmModelManager?.statusMessage ?? "")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
+                                Text(appState.llmModelManager?.statusMessage ?? "Loading…")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
                             } else {
                                 HStack(spacing: 8) {
                                     if isCached {
