@@ -13,12 +13,14 @@ final class ModelManager {
     }
 
     func refreshLocalModels() {
-        // WhisperKit stores models at: <modelsDirectory>/models/openai/whisper-<modelID>/
-        let openaiDir = Constants.modelsDirectory
+        // WhisperKit stores models at:
+        //   <modelsDirectory>/models/argmaxinc/whisperkit-coreml/openai_whisper-<modelID>/
+        let whisperKitDir = Constants.modelsDirectory
             .appendingPathComponent("models")
-            .appendingPathComponent("openai")
+            .appendingPathComponent("argmaxinc")
+            .appendingPathComponent("whisperkit-coreml")
         guard let contents = try? FileManager.default.contentsOfDirectory(
-            at: openaiDir,
+            at: whisperKitDir,
             includingPropertiesForKeys: nil
         ) else {
             availableLocalModels = []
@@ -28,8 +30,8 @@ final class ModelManager {
             .filter { $0.hasDirectoryPath }
             .compactMap { url -> String? in
                 let name = url.lastPathComponent
-                guard name.hasPrefix("whisper-") else { return nil }
-                return String(name.dropFirst("whisper-".count))
+                guard name.hasPrefix("openai_whisper-") else { return nil }
+                return String(name.dropFirst("openai_whisper-".count))
             }
             .sorted()
     }
@@ -58,11 +60,13 @@ final class ModelManager {
     }
 
     func deleteModel(_ name: String) throws {
-        // WhisperKit stores models at: <modelsDirectory>/models/openai/whisper-<modelID>/
-        let openaiDir = Constants.modelsDirectory
+        // WhisperKit stores models at:
+        //   <modelsDirectory>/models/argmaxinc/whisperkit-coreml/openai_whisper-<modelID>/
+        let whisperKitDir = Constants.modelsDirectory
             .appendingPathComponent("models")
-            .appendingPathComponent("openai")
-        let modelDir = openaiDir.appendingPathComponent("whisper-\(name)")
+            .appendingPathComponent("argmaxinc")
+            .appendingPathComponent("whisperkit-coreml")
+        let modelDir = whisperKitDir.appendingPathComponent("openai_whisper-\(name)")
         // Validate the resolved path is within the models directory to prevent path traversal
         let resolvedPath = modelDir.standardizedFileURL.path
         let basePath = Constants.modelsDirectory.standardizedFileURL.path
