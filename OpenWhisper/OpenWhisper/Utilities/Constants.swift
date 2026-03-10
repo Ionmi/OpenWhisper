@@ -49,12 +49,12 @@ enum Constants {
 
         var label: String {
             switch self {
-            case .topCenter: "Top Center"
-            case .bottomCenter: "Bottom Center"
-            case .topLeft: "Top Left"
-            case .topRight: "Top Right"
-            case .bottomLeft: "Bottom Left"
-            case .bottomRight: "Bottom Right"
+            case .topCenter: String(localized: "Top Center")
+            case .bottomCenter: String(localized: "Bottom Center")
+            case .topLeft: String(localized: "Top Left")
+            case .topRight: String(localized: "Top Right")
+            case .bottomLeft: String(localized: "Bottom Left")
+            case .bottomRight: String(localized: "Bottom Right")
             }
         }
     }
@@ -67,15 +67,15 @@ enum Constants {
 
         var label: String {
             switch self {
-            case .pill: "Pill"
-            case .minimal: "Minimal"
+            case .pill: String(localized: "Pill")
+            case .minimal: String(localized: "Minimal")
             }
         }
 
         var description: String {
             switch self {
-            case .pill: "Red dot with waveform bars"
-            case .minimal: "Compact dot only"
+            case .pill: String(localized: "Red dot with waveform bars")
+            case .minimal: String(localized: "Compact dot only")
             }
         }
     }
@@ -89,17 +89,17 @@ enum Constants {
 
         var label: String {
             switch self {
-            case .auto: "Auto"
-            case .toggle: "Toggle"
-            case .hold: "Hold"
+            case .auto: String(localized: "Auto")
+            case .toggle: String(localized: "Toggle")
+            case .hold: String(localized: "Hold")
             }
         }
 
         var description: String {
             switch self {
-            case .auto: "Quick press to toggle, hold to record while pressed"
-            case .toggle: "Press to start, Enter to confirm, ESC to cancel"
-            case .hold: "Hold to record, release to confirm"
+            case .auto: String(localized: "Quick press to toggle, hold to record while pressed")
+            case .toggle: String(localized: "Press to start, Enter to confirm, ESC to cancel")
+            case .hold: String(localized: "Hold to record, release to confirm")
             }
         }
     }
@@ -113,17 +113,17 @@ enum Constants {
 
         var label: String {
             switch self {
-            case .pasteAutomatic: "Paste automatically"
-            case .clipboardOnly: "Copy to clipboard"
-            case .historyOnly: "History only"
+            case .pasteAutomatic: String(localized: "Paste automatically")
+            case .clipboardOnly: String(localized: "Copy to clipboard")
+            case .historyOnly: String(localized: "History only")
             }
         }
 
         var description: String {
             switch self {
-            case .pasteAutomatic: "Pastes text at cursor when confirmed"
-            case .clipboardOnly: "Copies text to clipboard when confirmed"
-            case .historyOnly: "Only saves to transcription history"
+            case .pasteAutomatic: String(localized: "Pastes text at cursor when confirmed")
+            case .clipboardOnly: String(localized: "Copies text to clipboard when confirmed")
+            case .historyOnly: String(localized: "Only saves to transcription history")
             }
         }
     }
@@ -138,36 +138,40 @@ enum Constants {
         ]
         static let defaultModel = "base"
 
-        static let descriptions: [String: (size: String, quality: String)] = [
-            "tiny":           ("~75 MB",  "Fastest, lower accuracy"),
-            "tiny.en":        ("~75 MB",  "Fastest, English only"),
-            "base":           ("~145 MB", "Fast, good accuracy"),
-            "base.en":        ("~145 MB", "Fast, English only"),
-            "small":          ("~465 MB", "Balanced speed & accuracy"),
-            "small.en":       ("~465 MB", "Balanced, English only"),
-            "medium":         ("~1.5 GB", "High accuracy, slower"),
-            "medium.en":      ("~1.5 GB", "High accuracy, English only"),
-            "large-v3":       ("~3 GB",   "Best accuracy, slowest"),
-            "large-v3-turbo": ("~1.6 GB", "Near-best accuracy, faster"),
-        ]
+        static var descriptions: [String: (size: String, quality: String)] {
+            [
+                "tiny":           ("~75 MB",  String(localized: "Fastest, lower accuracy")),
+                "tiny.en":        ("~75 MB",  String(localized: "Fastest, English only")),
+                "base":           ("~145 MB", String(localized: "Fast, good accuracy")),
+                "base.en":        ("~145 MB", String(localized: "Fast, English only")),
+                "small":          ("~465 MB", String(localized: "Balanced speed & accuracy")),
+                "small.en":       ("~465 MB", String(localized: "Balanced, English only")),
+                "medium":         ("~1.5 GB", String(localized: "High accuracy, slower")),
+                "medium.en":      ("~1.5 GB", String(localized: "High accuracy, English only")),
+                "large-v3":       ("~3 GB",   String(localized: "Best accuracy, slowest")),
+                "large-v3-turbo": ("~1.6 GB", String(localized: "Near-best accuracy, faster")),
+            ]
+        }
     }
 
     enum SupportedLanguages {
-        static let all: [(code: String, name: String)] = [
-            ("auto", "Auto-detect"),
-            ("en", "English"),
-            ("es", "Spanish"),
-            ("fr", "French"),
-            ("de", "German"),
-            ("it", "Italian"),
-            ("pt", "Portuguese"),
-            ("ja", "Japanese"),
-            ("ko", "Korean"),
-            ("zh", "Chinese"),
-            ("ru", "Russian"),
-            ("ar", "Arabic"),
-            ("hi", "Hindi"),
-        ]
+        static var all: [(code: String, name: String)] {
+            [
+                ("auto", String(localized: "Auto-detect")),
+                ("en", "English"),
+                ("es", "Español"),
+                ("fr", "Français"),
+                ("de", "Deutsch"),
+                ("it", "Italiano"),
+                ("pt", "Português"),
+                ("ja", "日本語"),
+                ("ko", "한국어"),
+                ("zh", "中文"),
+                ("ru", "Русский"),
+                ("ar", "العربية"),
+                ("hi", "हिन्दी"),
+            ]
+        }
         static let defaultLanguage = "en"
     }
 
