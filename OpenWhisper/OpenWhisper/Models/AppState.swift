@@ -537,9 +537,10 @@ final class AppState {
     }
 
     func loadTranscriptionEngine() async {
-        guard !isLoadingModel, !isModelLoaded else { return }
+        guard !isLoadingModel else { return }
         let engine = WhisperKitEngine()
         do {
+            isModelLoaded = false
             isLoadingModel = true
             errorMessage = nil
             try await engine.loadModel(name: settings.selectedModel)
