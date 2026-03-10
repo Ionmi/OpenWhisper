@@ -6,6 +6,30 @@ struct OpenWhisperApp: App {
     @State private var updaterService = UpdaterService()
     @State private var didAutoSetup = false
 
+    init() {
+        Self.applyStoredLanguage()
+    }
+
+    /// Language codes supported for UI localization beyond English.
+    private static let supportedUICodes: Set<String> = ["es"]
+
+    /// Reads the stored uiLanguage preference and applies it to AppleLanguages
+    /// so SwiftUI picks up the correct locale for all String(localized:) lookups.
+    /// Must run before any UI is created.
+    private static func applyStoredLanguage() {
+        let stored = UserDefaults.standard.string(forKey: Constants.Defaults.uiLanguage)
+            ?? Constants.SupportedUILanguages.defaultLanguage
+        let code: String
+        if stored == Constants.SupportedUILanguages.defaultLanguage {
+            let systemCode = Locale.current.language.languageCode?.identifier ?? "en"
+            code = supportedUICodes.contains(systemCode) ? systemCode : "en"
+        } else {
+            code = stored
+        }
+        UserDefaults.standard.set([code], forKey: "AppleLanguages")
+        UserDefaults.standard.synchronize()
+    }
+
     var body: some Scene {
         MenuBarExtra {
             MenuBarView()
