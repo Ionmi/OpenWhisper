@@ -27,6 +27,7 @@ final class AppState {
     var textOutputService: TextOutputService?
     var permissionsManager = PermissionsManager()
     var floatingRecorder: FloatingRecorderController?
+    let modelManager = ModelManager()
 
     // Services (v2)
     var dictionaryAdapter: (any DictionaryPort)?
@@ -544,6 +545,7 @@ final class AppState {
             try await engine.loadModel(name: settings.selectedModel)
             transcriptionEngine = engine
             isModelLoaded = true
+            modelManager.refreshLocalModels()
             isLoadingModel = false
         } catch {
             errorMessage = "Failed to load model: \(error.localizedDescription)"
