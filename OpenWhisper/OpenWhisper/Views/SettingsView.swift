@@ -194,6 +194,7 @@ private struct SettingsDetailContent: View {
 
 struct GeneralSettingsTab: View {
     @Environment(AppState.self) private var appState
+    @State private var originalUILanguage: String = UserDefaults.standard.string(forKey: Constants.Defaults.uiLanguage) ?? Constants.SupportedUILanguages.defaultLanguage
 
     var body: some View {
         @Bindable var settings = appState.settings
@@ -205,6 +206,18 @@ struct GeneralSettingsTab: View {
                     ForEach(Constants.SupportedLanguages.all, id: \.code) { lang in
                         Text(lang.name).tag(lang.code)
                     }
+                }
+
+                Picker("App Language", selection: $settings.uiLanguage) {
+                    Text("Auto").tag(Constants.SupportedUILanguages.defaultLanguage)
+                    Text("English").tag("en")
+                    Text("Español").tag("es")
+                }
+
+                if settings.uiLanguage != originalUILanguage {
+                    Text("Restart required to apply language change.")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
                 }
             }
 
