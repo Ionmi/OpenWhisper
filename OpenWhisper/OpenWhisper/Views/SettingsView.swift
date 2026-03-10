@@ -194,7 +194,6 @@ private struct SettingsDetailContent: View {
 
 struct GeneralSettingsTab: View {
     @Environment(AppState.self) private var appState
-    @State private var originalUILanguage: String = UserDefaults.standard.string(forKey: Constants.Defaults.uiLanguage) ?? Constants.SupportedUILanguages.defaultLanguage
 
     var body: some View {
         @Bindable var settings = appState.settings
@@ -214,7 +213,7 @@ struct GeneralSettingsTab: View {
                     Text("Español").tag("es")
                 }
 
-                if settings.uiLanguage != originalUILanguage {
+                if OpenWhisperApp.resolveLanguageCode(for: settings.uiLanguage) != OpenWhisperApp.appliedLanguageCode {
                     Text("Restart required to apply language change.")
                         .font(.caption)
                         .foregroundStyle(.orange)
