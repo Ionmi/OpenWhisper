@@ -64,6 +64,30 @@ struct MachineProfile: Sendable {
         }
     }
 
+    /// Recommended Whisper model family based on RAM.
+    var recommendedWhisperFamily: String {
+        switch totalRAMGB {
+        case ..<8:    return "tiny"
+        case 8..<16:  return "base"
+        case 16..<32: return "small"
+        case 32..<64: return "medium"
+        default:      return "large"
+        }
+    }
+
+    /// Recommended Whisper model ID, taking the user's selected language into account.
+    /// If language is "en", returns the English-only variant; otherwise multilingual.
+    func recommendedWhisperModelID(for language: String) -> String {
+        let family = recommendedWhisperFamily
+        if language == "en" {
+            // large family has no .en variant — fall back to large-v3-turbo
+            if family == "large" { return "large-v3-turbo" }
+            return "\(family).en"
+        }
+        if family == "large" { return "large-v3" }
+        return family
+    }
+
     var summary: String {
         "\(chipName) · \(gpuCoreCount) GPU cores · \(totalRAMGB) GB RAM"
     }
