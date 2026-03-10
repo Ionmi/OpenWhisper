@@ -16,6 +16,40 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Create self-signed certificate for code signing
+        run: |
+          # Create a temporary keychain for CI
+          security create-keychain -p "" /tmp/build.keychain
+          security default-keychain -s /tmp/build.keychain
+          security unlock-keychain -p "" /tmp/build.keychain
+          security set-keychain-settings /tmp/build.keychain
+
+          # Generate a self-signed certificate for code signing
+          cat > /tmp/cert.conf <<CERTEOF
+          [req]
+          distinguished_name = req_dn
+          x509_extensions = codesign
+          prompt = no
+          [req_dn]
+          CN = OpenWhisper Release
+          O = OpenWhisper
+          [codesign]
+          keyUsage = digitalSignature
+          extendedKeyUsage = codeSigning
+          CERTEOF
+          openssl req -x509 -newkey rsa:2048 -keyout /tmp/key.pem -out /tmp/cert.pem \
+            -days 3650 -nodes -config /tmp/cert.conf
+          openssl pkcs12 -export -out /tmp/cert.p12 -inkey /tmp/key.pem -in /tmp/cert.pem \
+            -passout pass:temp123
+
+          # Import certificate into keychain
+          security import /tmp/cert.p12 -k /tmp/build.keychain -P temp123 -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" /tmp/build.keychain
+
+          # Get the identity for use in build
+          IDENTITY=$(security find-identity -v -p codesigning /tmp/build.keychain | grep "OpenWhisper Release" | head -1 | awk -F'"' '{print $2}')
+          echo "CODESIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+
       - name: Resolve packages
         run: xcodebuild -resolvePackageDependencies -project OpenWhisper/OpenWhisper.xcodeproj -scheme OpenWhisper
 
@@ -26,9 +60,24 @@ jobs:
             -scheme OpenWhisper \
             -configuration Release \
             -archivePath /tmp/OpenWhisper.xcarchive \
-            CODE_SIGN_IDENTITY=- \
-            CODE_SIGNING_REQUIRED=NO \
-            AD_HOC_CODE_SIGNING_ALLOWED=YES
+            CODE_SIGN_IDENTITY="${CODESIGN_IDENTITY}" \
+            CODE_SIGNING_REQUIRED=YES \
+            CODE_SIGN_STYLE=Manual \
+            OTHER_CODE_SIGN_FLAGS="--keychain /tmp/build.keychain"
+
+      - name: Sign app bundle with entitlements
+        run: |
+          APP_PATH="/tmp/OpenWhisper.xcarchive/Products/Applications/OpenWhisper.app"
+          # Deep sign all nested frameworks and binaries first, then the app
+          find "$APP_PATH" -type d -name "*.framework" -o -type f -perm +111 | while read item; do
+            codesign --force --sign "${CODESIGN_IDENTITY}" --keychain /tmp/build.keychain \
+              --options runtime "$item" 2>/dev/null || true
+          done
+          codesign --force --deep --sign "${CODESIGN_IDENTITY}" --keychain /tmp/build.keychain \
+            --entitlements OpenWhisper/OpenWhisper/OpenWhisper.entitlements \
+            --options runtime "$APP_PATH"
+          # Verify signature
+          codesign --verify --verbose "$APP_PATH"
 
       - name: Package .zip
         run: |
