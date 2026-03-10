@@ -297,7 +297,7 @@
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "OpenWhisper needs microphone access to record your voice for transcription.";
-				INFOPLIST_KEY_SUFeedURL = "https://raw.githubusercontent.com/Ionmi/OpenWhisper/main/appcast.xml";
+				INFOPLIST_KEY_SUFeedURL = "https://github.com/Ionmi/OpenWhisper/releases/latest/download/appcast.xml";
 				INFOPLIST_KEY_SUPublicEDKey = "aWflUEPCPGqa6jkgy8ucggsmYuKEnk7RuA0TiyvzC+o=";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -347,7 +347,7 @@
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "OpenWhisper needs microphone access to record your voice for transcription.";
-				INFOPLIST_KEY_SUFeedURL = "https://raw.githubusercontent.com/Ionmi/OpenWhisper/main/appcast.xml";
+				INFOPLIST_KEY_SUFeedURL = "https://github.com/Ionmi/OpenWhisper/releases/latest/download/appcast.xml";
 				INFOPLIST_KEY_SUPublicEDKey = "aWflUEPCPGqa6jkgy8ucggsmYuKEnk7RuA0TiyvzC+o=";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
