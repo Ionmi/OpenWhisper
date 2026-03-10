@@ -29,8 +29,8 @@ final class LLMSettings {
         var id: String { rawValue }
         var label: String {
             switch self {
-            case .local: "Local (on-device)"
-            case .remote: "Remote (API)"
+            case .local: String(localized: "Local (on-device)")
+            case .remote: String(localized: "Remote (API)")
             }
         }
     }

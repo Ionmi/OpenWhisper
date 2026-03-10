@@ -406,6 +406,11 @@
         "es" : { "stringUnit" : { "state" : "translated", "value" : "Cargando modelo..." } }
       }
     },
+    "Local (on-device)" : {
+      "localizations" : {
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Local (en el dispositivo)" } }
+      }
+    },
     "Local Model (MLX)" : {
       "localizations" : {
         "es" : { "stringUnit" : { "state" : "translated", "value" : "Modelo local (MLX)" } }
@@ -649,6 +654,11 @@
     "Refining..." : {
       "localizations" : {
         "es" : { "stringUnit" : { "state" : "translated", "value" : "Refinando..." } }
+      }
+    },
+    "Remote (API)" : {
+      "localizations" : {
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Remoto (API)" } }
       }
     },
     "Remote API" : {
