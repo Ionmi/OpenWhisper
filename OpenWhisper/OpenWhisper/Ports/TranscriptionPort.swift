@@ -23,7 +23,7 @@ struct TranscriptionOutput {
 }
 
 protocol TranscriptionPort: Sendable {
-    func loadModel(name: String, progressHandler: ((Double) -> Void)?) async throws
+    func loadModel(name: String, progressHandler: ((Double, Double?) -> Void)?) async throws
     func transcribe(audioSamples: [Float], language: String?) async throws -> TranscriptionOutput
     var isModelLoaded: Bool { get }
 }

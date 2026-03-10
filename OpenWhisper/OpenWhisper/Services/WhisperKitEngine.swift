@@ -12,7 +12,7 @@ final class WhisperKitEngine: TranscriptionPort, @unchecked Sendable {
         return _isModelLoaded
     }
 
-    func loadModel(name: String, progressHandler: ((Double) -> Void)? = nil) async throws {
+    func loadModel(name: String, progressHandler: ((Double, Double?) -> Void)? = nil) async throws {
         lock.withLock {
             _isModelLoaded = false
         }
@@ -23,7 +23,8 @@ final class WhisperKitEngine: TranscriptionPort, @unchecked Sendable {
             variant: name,
             downloadBase: Constants.modelsDirectory,
             progressCallback: { progress in
-                progressHandler?(progress.fractionCompleted)
+                let speed = progress.userInfo[.throughputKey] as? Double
+                progressHandler?(progress.fractionCompleted, speed)
             }
         )
 

@@ -538,15 +538,27 @@ final class AppState {
 
     func loadTranscriptionEngine() async {
         guard !isLoadingModel else { return }
+        let modelID = settings.selectedModel
+        let totalBytes = (Constants.SupportedModels.all.first { $0.id == modelID }?.sizeGB ?? 1.0) * 1_000_000_000
+        var downloadedBytes = 0.0
+        var lastCallbackTime: Date?
+
         let engine = WhisperKitEngine()
         do {
             isModelLoaded = false
             isLoadingModel = true
             modelLoadProgress = 0
             errorMessage = nil
-            try await engine.loadModel(name: settings.selectedModel) { [weak self] progress in
+            try await engine.loadModel(name: modelID) { [weak self] _, speed in
                 Task { @MainActor [weak self] in
-                    self?.modelLoadProgress = progress
+                    guard let self else { return }
+                    let now = Date()
+                    if let last = lastCallbackTime, let speed, speed > 0 {
+                        downloadedBytes += speed * now.timeIntervalSince(last)
+                        downloadedBytes = min(downloadedBytes, totalBytes)
+                    }
+                    if let speed, speed > 0 { lastCallbackTime = now }
+                    self.modelLoadProgress = downloadedBytes / totalBytes
                 }
             }
             transcriptionEngine = engine
