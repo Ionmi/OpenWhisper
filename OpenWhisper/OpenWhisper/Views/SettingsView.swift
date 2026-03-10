@@ -423,50 +423,122 @@ struct AppearanceSettingsTab: View {
 
 struct ModelSettingsTab: View {
     @Environment(AppState.self) private var appState
+    private let profile = MachineProfile.current
 
     var body: some View {
         @Bindable var settings = appState.settings
+        let recommendedID = profile.recommendedWhisperModelID(for: settings.selectedLanguage)
+
         Form {
-            Section {
-                Picker("Model", selection: $settings.selectedModel) {
-                    ForEach(Constants.SupportedModels.all) { model in
-                        Text(model.displayName).tag(model.id)
-                    }
-                }
-
-                if appState.isLoadingModel {
-                    LabeledContent("Status") {
-                        HStack(spacing: 6) {
-                            ProgressView()
-                                .controlSize(.small)
-                            Text("Downloading…")
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                } else if appState.isModelLoaded {
-                    LabeledContent("Status") {
-                        Label("Loaded", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                    }
-                } else {
-                    Button("Download & Load Model") {
-                        Task {
-                            await appState.loadTranscriptionEngine()
+            ForEach(Constants.SupportedModels.families, id: \.self) { family in
+                let familyModels = Constants.SupportedModels.all.filter { $0.family == family }
+                Section(family.capitalized) {
+                    ForEach(familyModels) { model in
+                        WhisperModelRow(
+                            model: model,
+                            isActive: settings.selectedModel == model.id && appState.isModelLoaded,
+                            isCached: appState.modelManager.availableLocalModels.contains(model.id),
+                            isRecommended: model.id == recommendedID,
+                            isDownloadingThis: appState.isLoadingModel && settings.selectedModel == model.id,
+                            downloadProgress: appState.modelLoadProgress
+                        ) {
+                            settings.selectedModel = model.id
+                            Task { await appState.loadTranscriptionEngine() }
+                        } onDelete: {
+                            if settings.selectedModel == model.id {
+                                appState.isModelLoaded = false
+                            }
+                            try? appState.modelManager.deleteModel(model.id)
                         }
                     }
                 }
-            }
-
-            Section("Info") {
-                Text("Models are downloaded automatically by WhisperKit on first use.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text("Storage: ~/Library/Application Support/OpenWhisper/")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+private struct WhisperModelRow: View {
+    let model: Constants.SupportedModels.WhisperModel
+    let isActive: Bool
+    let isCached: Bool
+    let isRecommended: Bool
+    let isDownloadingThis: Bool
+    let downloadProgress: Double
+    let onDownloadOrLoad: () -> Void
+    let onDelete: () -> Void
+
+    @Environment(AppState.self) private var appState
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 4) {
+                        Text(model.displayName)
+                            .fontWeight(.medium)
+                        if isActive {
+                            Text("Active")
+                                .font(.caption2)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
+                                .background(.green.opacity(0.15), in: Capsule())
+                                .foregroundStyle(.green)
+                        }
+                        if isRecommended {
+                            Text("Recommended")
+                                .font(.caption2)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
+                                .background(.blue.opacity(0.15), in: Capsule())
+                                .foregroundStyle(.blue)
+                        }
+                    }
+                    Text("\(model.size) — \(model.quality)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if isDownloadingThis {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Downloading…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    HStack(spacing: 8) {
+                        if isCached {
+                            Button(role: .destructive) {
+                                onDelete()
+                            } label: {
+                                Image(systemName: "trash")
+                            }
+                            .buttonStyle(.borderless)
+                            .help("Delete downloaded model")
+                        }
+                        if isActive {
+                            Button("Loaded") {}
+                                .controlSize(.small)
+                                .disabled(true)
+                        } else if isCached {
+                            Button("Load") { onDownloadOrLoad() }
+                                .controlSize(.small)
+                                .disabled(appState.isLoadingModel)
+                        } else {
+                            Button("Download") { onDownloadOrLoad() }
+                                .controlSize(.small)
+                                .disabled(appState.isLoadingModel)
+                        }
+                    }
+                }
+            }
+            if isDownloadingThis {
+                ProgressView(value: downloadProgress)
+                    .progressViewStyle(.linear)
+            }
+        }
     }
 }
 
