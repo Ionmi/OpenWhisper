@@ -39,6 +39,7 @@ OpenWhisper processes all audio locally on your Mac. Your voice recordings are n
 ### Homebrew (recommended)
 
 ```bash
+brew tap Ionmi/tap
 brew install --cask openwhisper
 ```
 

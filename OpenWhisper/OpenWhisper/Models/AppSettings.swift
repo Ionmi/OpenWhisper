@@ -24,7 +24,11 @@ final class AppSettings {
     }
 
     var uiLanguage: String {
-        didSet { save(uiLanguage, forKey: Constants.Defaults.uiLanguage) }
+        didSet {
+            save(uiLanguage, forKey: Constants.Defaults.uiLanguage)
+            let resolved = Constants.SupportedUILanguages.resolvedCode(for: uiLanguage)
+            UserDefaults.standard.set([resolved], forKey: "AppleLanguages")
+        }
     }
 
     var onboardingCompleted: Bool {

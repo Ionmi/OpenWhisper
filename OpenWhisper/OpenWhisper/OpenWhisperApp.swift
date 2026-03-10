@@ -13,17 +13,10 @@ struct OpenWhisperApp: App {
     /// The language code that was actually applied at launch ("en", "es", …).
     static private(set) var appliedLanguageCode: String = "en"
 
-    /// Language codes supported for UI localization beyond English.
-    private static let supportedUICodes: Set<String> = ["es"]
-
     /// Resolves a stored uiLanguage value ("auto", "en", "es", …) to an actual
     /// language code, applying the same logic used at launch.
     static func resolveLanguageCode(for stored: String) -> String {
-        if stored == Constants.SupportedUILanguages.defaultLanguage {
-            let systemCode = Locale.current.language.languageCode?.identifier ?? "en"
-            return supportedUICodes.contains(systemCode) ? systemCode : "en"
-        }
-        return stored
+        Constants.SupportedUILanguages.resolvedCode(for: stored)
     }
 
     /// Reads the stored uiLanguage preference and applies it to AppleLanguages

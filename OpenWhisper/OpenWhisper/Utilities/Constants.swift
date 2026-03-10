@@ -177,5 +177,14 @@ enum Constants {
 
     enum SupportedUILanguages {
         static let defaultLanguage = "auto"
+        static let supportedCodes: Set<String> = ["es"]
+
+        static func resolvedCode(for stored: String) -> String {
+            if stored == defaultLanguage {
+                let systemCode = Locale.current.language.languageCode?.identifier ?? "en"
+                return supportedCodes.contains(systemCode) ? systemCode : "en"
+            }
+            return stored
+        }
     }
 }
