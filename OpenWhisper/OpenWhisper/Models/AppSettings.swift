@@ -47,6 +47,10 @@ final class AppSettings {
         didSet { save(showLivePreview, forKey: Constants.Defaults.showLivePreview) }
     }
 
+    var uiLanguage: String {
+        didSet { save(uiLanguage, forKey: Constants.Defaults.uiLanguage) }
+    }
+
     var launchAtLogin: Bool {
         didSet {
             save(launchAtLogin, forKey: Constants.Defaults.launchAtLogin)
@@ -131,6 +135,7 @@ final class AppSettings {
             showLivePreview = true
         }
 
+        uiLanguage = d.string(forKey: Constants.Defaults.uiLanguage) ?? "auto"
         launchAtLogin = SMAppService.mainApp.status == .enabled
     }
 

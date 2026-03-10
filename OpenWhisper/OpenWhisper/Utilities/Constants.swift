@@ -34,6 +34,7 @@ enum Constants {
         static let outputMode = "outputMode"
         static let showLivePreview = "showLivePreview"
         static let launchAtLogin = "launchAtLogin"
+        static let uiLanguage = "uiLanguage"
     }
 
     enum IndicatorPosition: String, CaseIterable, Identifiable {
