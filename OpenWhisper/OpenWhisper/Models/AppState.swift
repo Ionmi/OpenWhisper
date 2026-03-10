@@ -45,6 +45,10 @@ final class AppState {
     private var isSetUp = false
     private var audioLevelTimer: Timer?
 
+    // Whisper download byte-tracking (mirrors LLMModelManager pattern)
+    private var whisperDownloadedBytes: Double = 0
+    private var whisperLastCallbackTime: Date?
+
     // Streaming state
     private var streamingTimer: Timer?
     private var streamedText = ""
@@ -540,25 +544,25 @@ final class AppState {
         guard !isLoadingModel else { return }
         let modelID = settings.selectedModel
         let totalBytes = (Constants.SupportedModels.all.first { $0.id == modelID }?.sizeGB ?? 1.0) * 1_000_000_000
-        var downloadedBytes = 0.0
-        var lastCallbackTime: Date?
 
         let engine = WhisperKitEngine()
         do {
             isModelLoaded = false
             isLoadingModel = true
             modelLoadProgress = 0
+            whisperDownloadedBytes = 0
+            whisperLastCallbackTime = nil
             errorMessage = nil
             try await engine.loadModel(name: modelID) { [weak self] _, speed in
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     let now = Date()
-                    if let last = lastCallbackTime, let speed, speed > 0 {
-                        downloadedBytes += speed * now.timeIntervalSince(last)
-                        downloadedBytes = min(downloadedBytes, totalBytes)
+                    if let last = self.whisperLastCallbackTime, let speed, speed > 0 {
+                        self.whisperDownloadedBytes += speed * now.timeIntervalSince(last)
+                        self.whisperDownloadedBytes = min(self.whisperDownloadedBytes, totalBytes)
                     }
-                    if let speed, speed > 0 { lastCallbackTime = now }
-                    self.modelLoadProgress = downloadedBytes / totalBytes
+                    if let speed, speed > 0 { self.whisperLastCallbackTime = now }
+                    self.modelLoadProgress = self.whisperDownloadedBytes / totalBytes
                 }
             }
             transcriptionEngine = engine
