@@ -4,7 +4,7 @@ import Foundation
 @MainActor
 final class ModelManager {
     var availableLocalModels: [String] = []
-    var downloadableModels: [String] = Constants.SupportedModels.all
+    var downloadableModels: [Constants.SupportedModels.WhisperModel] = Constants.SupportedModels.all
     var isDownloading = false
     var downloadProgress: Double = 0
 

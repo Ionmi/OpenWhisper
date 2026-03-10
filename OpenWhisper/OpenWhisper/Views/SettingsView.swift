@@ -429,8 +429,8 @@ struct ModelSettingsTab: View {
         Form {
             Section {
                 Picker("Model", selection: $settings.selectedModel) {
-                    ForEach(Constants.SupportedModels.all, id: \.self) { model in
-                        Text(model).tag(model)
+                    ForEach(Constants.SupportedModels.all) { model in
+                        Text(model.displayName).tag(model.id)
                     }
                 }
 

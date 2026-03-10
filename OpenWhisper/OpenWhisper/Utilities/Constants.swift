@@ -129,29 +129,32 @@ enum Constants {
     }
 
     enum SupportedModels {
-        static let all = [
-            "tiny", "tiny.en",
-            "base", "base.en",
-            "small", "small.en",
-            "medium", "medium.en",
-            "large-v3", "large-v3-turbo",
-        ]
-        static let defaultModel = "base"
-
-        static var descriptions: [String: (size: String, quality: String)] {
-            [
-                "tiny":           ("~75 MB",  String(localized: "Fastest, lower accuracy")),
-                "tiny.en":        ("~75 MB",  String(localized: "Fastest, English only")),
-                "base":           ("~145 MB", String(localized: "Fast, good accuracy")),
-                "base.en":        ("~145 MB", String(localized: "Fast, English only")),
-                "small":          ("~465 MB", String(localized: "Balanced speed & accuracy")),
-                "small.en":       ("~465 MB", String(localized: "Balanced, English only")),
-                "medium":         ("~1.5 GB", String(localized: "High accuracy, slower")),
-                "medium.en":      ("~1.5 GB", String(localized: "High accuracy, English only")),
-                "large-v3":       ("~3 GB",   String(localized: "Best accuracy, slowest")),
-                "large-v3-turbo": ("~1.6 GB", String(localized: "Near-best accuracy, faster")),
-            ]
+        struct WhisperModel: Identifiable {
+            let id: String
+            let family: String
+            let displayName: String
+            let size: String
+            let sizeGB: Double
+            let quality: String
+            let isEnglishOnly: Bool
         }
+
+        static let all: [WhisperModel] = [
+            WhisperModel(id: "tiny",           family: "tiny",   displayName: "Tiny",              size: "~75 MB",   sizeGB: 0.075, quality: String(localized: "Fastest, lower accuracy"),     isEnglishOnly: false),
+            WhisperModel(id: "tiny.en",        family: "tiny",   displayName: "Tiny (English)",     size: "~75 MB",   sizeGB: 0.075, quality: String(localized: "Fastest, English only"),        isEnglishOnly: true),
+            WhisperModel(id: "base",           family: "base",   displayName: "Base",              size: "~145 MB",  sizeGB: 0.145, quality: String(localized: "Fast, good accuracy"),           isEnglishOnly: false),
+            WhisperModel(id: "base.en",        family: "base",   displayName: "Base (English)",     size: "~145 MB",  sizeGB: 0.145, quality: String(localized: "Fast, English only"),            isEnglishOnly: true),
+            WhisperModel(id: "small",          family: "small",  displayName: "Small",             size: "~465 MB",  sizeGB: 0.465, quality: String(localized: "Balanced speed & accuracy"),     isEnglishOnly: false),
+            WhisperModel(id: "small.en",       family: "small",  displayName: "Small (English)",    size: "~465 MB",  sizeGB: 0.465, quality: String(localized: "Balanced, English only"),        isEnglishOnly: true),
+            WhisperModel(id: "medium",         family: "medium", displayName: "Medium",            size: "~1.5 GB",  sizeGB: 1.5,   quality: String(localized: "High accuracy, slower"),          isEnglishOnly: false),
+            WhisperModel(id: "medium.en",      family: "medium", displayName: "Medium (English)",   size: "~1.5 GB",  sizeGB: 1.5,   quality: String(localized: "High accuracy, English only"),    isEnglishOnly: true),
+            WhisperModel(id: "large-v3",       family: "large",  displayName: "Large v3",          size: "~3 GB",    sizeGB: 3.0,   quality: String(localized: "Best accuracy, slowest"),          isEnglishOnly: false),
+            WhisperModel(id: "large-v3-turbo", family: "large",  displayName: "Large v3 Turbo",    size: "~1.6 GB",  sizeGB: 1.6,   quality: String(localized: "Near-best accuracy, faster"),      isEnglishOnly: false),
+        ]
+
+        static let families: [String] = ["tiny", "base", "small", "medium", "large"]
+
+        static let defaultModel = "base"
     }
 
     enum SupportedLanguages {

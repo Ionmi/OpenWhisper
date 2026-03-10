@@ -234,19 +234,15 @@ struct OnboardingView: View {
                     .font(.headline)
 
                 Picker("Model", selection: $settings.selectedModel) {
-                    ForEach(Constants.SupportedModels.all, id: \.self) { model in
-                        if let info = Constants.SupportedModels.descriptions[model] {
-                            Text("\(model)  (\(info.size) — \(info.quality))").tag(model)
-                        } else {
-                            Text(model).tag(model)
-                        }
+                    ForEach(Constants.SupportedModels.all) { model in
+                        Text(model.displayName).tag(model.id)
                     }
                 }
                 .pickerStyle(.menu)
                 .labelsHidden()
 
-                if let info = Constants.SupportedModels.descriptions[settings.selectedModel] {
-                    Text("\(info.size) — \(info.quality)")
+                if let model = Constants.SupportedModels.all.first(where: { $0.id == settings.selectedModel }) {
+                    Text("\(model.size) — \(model.quality)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
