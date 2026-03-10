@@ -12,14 +12,24 @@ final class WhisperKitEngine: TranscriptionPort, @unchecked Sendable {
         return _isModelLoaded
     }
 
-    func loadModel(name: String) async throws {
+    func loadModel(name: String, progressHandler: ((Double) -> Void)? = nil) async throws {
         lock.withLock {
             _isModelLoaded = false
         }
 
-        let kit = try await WhisperKit(
-            model: name,
+        // Step 1: Download (or verify cached) with progress reporting.
+        // WhisperKit.download() checks local cache and only fetches missing files.
+        let modelFolder = try await WhisperKit.download(
+            variant: name,
             downloadBase: Constants.modelsDirectory,
+            progressCallback: { progress in
+                progressHandler?(progress.fractionCompleted)
+            }
+        )
+
+        // Step 2: Load the already-downloaded model.
+        let kit = try await WhisperKit(
+            modelFolder: modelFolder.path,
             verbose: false,
             prewarm: true
         )

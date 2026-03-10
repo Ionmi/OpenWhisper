@@ -500,7 +500,9 @@ private struct WhisperModelRow: View {
                     HStack(spacing: 6) {
                         ProgressView()
                             .controlSize(.small)
-                        Text("Downloading…")
+                        Text(downloadProgress > 0 && downloadProgress < 1
+                             ? "\(Int(downloadProgress * 100))%"
+                             : "Loading…")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -532,7 +534,7 @@ private struct WhisperModelRow: View {
                 }
             }
             if isDownloadingThis {
-                ProgressView()
+                ProgressView(value: downloadProgress > 0 ? downloadProgress : nil)
                     .progressViewStyle(.linear)
             }
         }

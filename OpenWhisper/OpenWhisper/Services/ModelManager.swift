@@ -13,9 +13,12 @@ final class ModelManager {
     }
 
     func refreshLocalModels() {
-        let modelsDir = Constants.modelsDirectory
+        // WhisperKit stores models at: <modelsDirectory>/models/openai/whisper-<modelID>/
+        let openaiDir = Constants.modelsDirectory
+            .appendingPathComponent("models")
+            .appendingPathComponent("openai")
         guard let contents = try? FileManager.default.contentsOfDirectory(
-            at: modelsDir,
+            at: openaiDir,
             includingPropertiesForKeys: nil
         ) else {
             availableLocalModels = []
@@ -23,7 +26,11 @@ final class ModelManager {
         }
         availableLocalModels = contents
             .filter { $0.hasDirectoryPath }
-            .map { $0.lastPathComponent }
+            .compactMap { url -> String? in
+                let name = url.lastPathComponent
+                guard name.hasPrefix("whisper-") else { return nil }
+                return String(name.dropFirst("whisper-".count))
+            }
             .sorted()
     }
 
@@ -51,7 +58,11 @@ final class ModelManager {
     }
 
     func deleteModel(_ name: String) throws {
-        let modelDir = Constants.modelsDirectory.appendingPathComponent(name)
+        // WhisperKit stores models at: <modelsDirectory>/models/openai/whisper-<modelID>/
+        let openaiDir = Constants.modelsDirectory
+            .appendingPathComponent("models")
+            .appendingPathComponent("openai")
+        let modelDir = openaiDir.appendingPathComponent("whisper-\(name)")
         // Validate the resolved path is within the models directory to prevent path traversal
         let resolvedPath = modelDir.standardizedFileURL.path
         let basePath = Constants.modelsDirectory.standardizedFileURL.path

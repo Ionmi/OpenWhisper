@@ -542,15 +542,22 @@ final class AppState {
         do {
             isModelLoaded = false
             isLoadingModel = true
+            modelLoadProgress = 0
             errorMessage = nil
-            try await engine.loadModel(name: settings.selectedModel)
+            try await engine.loadModel(name: settings.selectedModel) { [weak self] progress in
+                Task { @MainActor [weak self] in
+                    self?.modelLoadProgress = progress
+                }
+            }
             transcriptionEngine = engine
             isModelLoaded = true
+            modelLoadProgress = 1
             modelManager.refreshLocalModels()
             isLoadingModel = false
         } catch {
             errorMessage = "Failed to load model: \(error.localizedDescription)"
             isLoadingModel = false
+            modelLoadProgress = 0
         }
     }
 
