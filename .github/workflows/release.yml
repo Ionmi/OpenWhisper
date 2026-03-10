@@ -40,7 +40,7 @@ jobs:
           openssl req -x509 -newkey rsa:2048 -keyout /tmp/key.pem -out /tmp/cert.pem \
             -days 3650 -nodes -config /tmp/cert.conf
           openssl pkcs12 -export -out /tmp/cert.p12 -inkey /tmp/key.pem -in /tmp/cert.pem \
-            -passout pass:temp123
+            -passout pass:temp123 -legacy
 
           # Import certificate into keychain
           security import /tmp/cert.p12 -k /tmp/build.keychain -P temp123 -T /usr/bin/codesign
