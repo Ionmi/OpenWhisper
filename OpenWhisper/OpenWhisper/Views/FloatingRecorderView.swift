@@ -127,51 +127,72 @@ struct FloatingRecorderMinimalView: View {
     }
 }
 
-// MARK: - Processing View
+// MARK: - Transcribing View (bouncing dots)
+
+struct FloatingRecorderTranscribingView: View {
+    @State private var active = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(0..<3, id: \.self) { index in
+                Circle()
+                    .fill(.blue)
+                    .frame(width: 8, height: 8)
+                    .offset(y: active ? -4 : 4)
+                    .animation(
+                        .easeInOut(duration: 0.4)
+                            .repeatForever(autoreverses: true)
+                            .delay(Double(index) * 0.15),
+                        value: active
+                    )
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(
+            Capsule(style: .continuous)
+                .fill(.ultraThinMaterial)
+        )
+        .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
+        .onAppear { active = true }
+    }
+}
+
+// MARK: - Processing View (pulsing brain icon)
 
 struct FloatingRecorderProcessingView: View {
     @State private var animating = false
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "brain")
-                .foregroundStyle(.purple)
-                .font(.system(size: 16))
-                .symbolEffect(.pulse, isActive: animating)
-            Text("Refining...")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.white.opacity(0.9))
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(
-            Capsule(style: .continuous)
-                .fill(.ultraThinMaterial)
-        )
-        .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
-        .onAppear { animating = true }
+        Image(systemName: "brain")
+            .foregroundStyle(.purple)
+            .font(.system(size: 18))
+            .symbolEffect(.pulse, isActive: animating)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(.ultraThinMaterial)
+            )
+            .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
+            .onAppear { animating = true }
     }
 }
 
-// MARK: - Confirmation View
+// MARK: - Confirmation View (checkmark only)
 
 struct FloatingRecorderConfirmationView: View {
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(.green)
-                .font(.system(size: 16))
-            Text("Done")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.white.opacity(0.9))
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(
-            Capsule(style: .continuous)
-                .fill(.ultraThinMaterial)
-        )
-        .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
+        Image(systemName: "checkmark.circle.fill")
+            .foregroundStyle(.green)
+            .font(.system(size: 18))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(.ultraThinMaterial)
+            )
+            .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
     }
 }
 
@@ -398,6 +419,22 @@ final class FloatingRecorderController {
     func hide() {
         panel?.orderOut(nil)
         panel = nil
+    }
+
+    func showTranscribing() {
+        guard let panel, appState != nil else { return }
+
+        let alignment = swiftUIAlignment
+        let canvas = Self.canvasSize
+
+        let transcribingView = FloatingCanvasView(
+            content: FloatingRecorderTranscribingView(),
+            alignment: alignment,
+            canvasSize: canvas
+        )
+        let hosting = NSHostingView(rootView: transcribingView)
+        hosting.setFrameSize(canvas)
+        panel.contentView = hosting
     }
 
     func showProcessing() {

@@ -112,8 +112,10 @@ final class AppState {
         // running briefly to flush any pending buffers.
         currentState = .transcribing
         livePreviewText = ""
+        floatingRecorder?.showTranscribing()
 
         let language = settings.selectedLanguage
+        let streamCoverage = lastStreamedSampleCount
 
         Task {
             // Let the audio engine keep recording for a short window so
@@ -136,34 +138,42 @@ final class AppState {
 
             var finalText = streamedText
 
-            // 1. Filter audio through VAD if enabled
-            var processedSamples = audioSamples
-            if audioSettings.vadEnabled, let vad = voiceActivityDetector {
-                let segments = vad.detectSpeechSegments(in: audioSamples, sampleRate: 16000)
-                if !segments.isEmpty {
-                    processedSamples = segments.flatMap { Array(audioSamples[$0.start..<min($0.end, audioSamples.count)]) }
-                }
-            }
+            // Skip the final Whisper pass if streaming already covered
+            // most of the audio (within 1s / 16000 samples). The streamed
+            // text is accurate enough and this saves the full inference.
+            let newSamples = audioSamples.count - streamCoverage
+            let needsFinalPass = streamedText.isEmpty || newSamples > 16000
 
-            // 2. Pad with trailing silence so Whisper can properly
-            //    transcribe the very last words (avoids cut-off).
-            let silencePadding = [Float](repeating: 0, count: 4800) // 300ms at 16kHz
-            processedSamples += silencePadding
-
-            // 3. Final transcription of the complete audio for best accuracy
-            if let engine = transcriptionEngine {
-                do {
-                    let output = try await engine.transcribe(
-                        audioSamples: processedSamples,
-                        language: language == "auto" ? nil : language
-                    )
-                    detectedLanguage = output.detectedLanguage
-                    let cleaned = Self.cleanTranscription(output.text)
-                    if !cleaned.isEmpty {
-                        finalText = cleaned
+            if needsFinalPass {
+                // 1. Filter audio through VAD if enabled
+                var processedSamples = audioSamples
+                if audioSettings.vadEnabled, let vad = voiceActivityDetector {
+                    let segments = vad.detectSpeechSegments(in: audioSamples, sampleRate: 16000)
+                    if !segments.isEmpty {
+                        processedSamples = segments.flatMap { Array(audioSamples[$0.start..<min($0.end, audioSamples.count)]) }
                     }
-                } catch {
-                    // Fall back to last streamed text
+                }
+
+                // 2. Pad with trailing silence so Whisper can properly
+                //    transcribe the very last words (avoids cut-off).
+                let silencePadding = [Float](repeating: 0, count: 4800) // 300ms at 16kHz
+                processedSamples += silencePadding
+
+                // 3. Final transcription of the complete audio for best accuracy
+                if let engine = transcriptionEngine {
+                    do {
+                        let output = try await engine.transcribe(
+                            audioSamples: processedSamples,
+                            language: language == "auto" ? nil : language
+                        )
+                        detectedLanguage = output.detectedLanguage
+                        let cleaned = Self.cleanTranscription(output.text)
+                        if !cleaned.isEmpty {
+                            finalText = cleaned
+                        }
+                    } catch {
+                        // Fall back to last streamed text
+                    }
                 }
             }
 
