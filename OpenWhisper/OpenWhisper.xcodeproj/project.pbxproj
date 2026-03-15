@@ -297,13 +297,12 @@
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "OpenWhisper needs microphone access to record your voice for transcription.";
-				INFOPLIST_KEY_SUFeedURL = "https://github.com/Ionmi/OpenWhisper/releases/latest/download/appcast.xml";
-				INFOPLIST_KEY_SUPublicEDKey = "aWflUEPCPGqa6jkgy8ucggsmYuKEnk7RuA0TiyvzC+o=";
+				INFOPLIST_FILE = OpenWhisper/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2.3.1;
+				MARKETING_VERSION = 2.3.2;
 				PRODUCT_BUNDLE_IDENTIFIER = me.OpenWhisper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -347,13 +346,12 @@
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "OpenWhisper needs microphone access to record your voice for transcription.";
-				INFOPLIST_KEY_SUFeedURL = "https://github.com/Ionmi/OpenWhisper/releases/latest/download/appcast.xml";
-				INFOPLIST_KEY_SUPublicEDKey = "aWflUEPCPGqa6jkgy8ucggsmYuKEnk7RuA0TiyvzC+o=";
+				INFOPLIST_FILE = OpenWhisper/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2.3.1;
+				MARKETING_VERSION = 2.3.2;
 				PRODUCT_BUNDLE_IDENTIFIER = me.OpenWhisper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
