@@ -70,16 +70,30 @@ jobs:
       - name: Sign app bundle with entitlements
         run: |
           APP_PATH="/tmp/OpenWhisper.xcarchive/Products/Applications/OpenWhisper.app"
-          # Deep sign all nested frameworks and binaries first, then the app
-          find "$APP_PATH" -type d -name "*.framework" -o -type f -perm +111 | while read item; do
+          # Sign inside-out: XPC services, helper apps, frameworks, dylibs, then the main app.
+          # Every nested component must be signed with the same identity before the parent.
+          find "$APP_PATH/Contents/Frameworks" -name "*.xpc" -type d | while read xpc; do
             codesign --force --sign "${CODESIGN_IDENTITY}" --keychain /tmp/build.keychain \
-              --options runtime "$item" 2>/dev/null || true
+              --options runtime "$xpc"
           done
-          codesign --force --deep --sign "${CODESIGN_IDENTITY}" --keychain /tmp/build.keychain \
+          find "$APP_PATH/Contents/Frameworks" -name "*.app" -type d | while read app; do
+            codesign --force --sign "${CODESIGN_IDENTITY}" --keychain /tmp/build.keychain \
+              --options runtime "$app"
+          done
+          find "$APP_PATH/Contents/Frameworks" -name "*.framework" -type d -maxdepth 1 | while read fw; do
+            codesign --force --sign "${CODESIGN_IDENTITY}" --keychain /tmp/build.keychain \
+              --options runtime "$fw"
+          done
+          find "$APP_PATH/Contents/Frameworks" -name "*.dylib" -type f | while read lib; do
+            codesign --force --sign "${CODESIGN_IDENTITY}" --keychain /tmp/build.keychain \
+              --options runtime "$lib"
+          done
+          # Sign the main app last with entitlements
+          codesign --force --sign "${CODESIGN_IDENTITY}" --keychain /tmp/build.keychain \
             --entitlements OpenWhisper/OpenWhisper/OpenWhisper.entitlements \
             --options runtime "$APP_PATH"
-          # Verify signature
-          codesign --verify --verbose "$APP_PATH"
+          # Verify deep signature
+          codesign --verify --deep --strict --verbose "$APP_PATH"
 
       - name: Package .zip
         run: |
