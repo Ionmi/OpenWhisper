@@ -16,7 +16,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Create self-signed certificate for code signing
+      - name: Import code signing certificate
+        env:
+          CERTIFICATE_P12: ${{ secrets.CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
         run: |
           # Create a temporary keychain for CI
           security create-keychain -p "" /tmp/build.keychain
@@ -24,33 +27,22 @@ jobs:
           security unlock-keychain -p "" /tmp/build.keychain
           security set-keychain-settings /tmp/build.keychain
 
-          # Generate a self-signed certificate for code signing
-          cat > /tmp/cert.conf <<CERTEOF
-          [req]
-          distinguished_name = req_dn
-          x509_extensions = codesign
-          prompt = no
-          [req_dn]
-          CN = OpenWhisper Release
-          O = OpenWhisper
-          [codesign]
-          keyUsage = digitalSignature
-          extendedKeyUsage = codeSigning
-          CERTEOF
-          openssl req -x509 -newkey rsa:2048 -keyout /tmp/key.pem -out /tmp/cert.pem \
-            -days 3650 -nodes -config /tmp/cert.conf
-          openssl pkcs12 -export -out /tmp/cert.p12 -inkey /tmp/key.pem -in /tmp/cert.pem \
-            -passout pass:temp123 -legacy
+          # Import the persistent certificate from secrets
+          echo "$CERTIFICATE_P12" | base64 --decode > /tmp/cert.p12
+          security import /tmp/cert.p12 -k /tmp/build.keychain -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
 
-          # Import certificate into keychain and trust it for codesigning
-          security import /tmp/cert.p12 -k /tmp/build.keychain -P temp123 -T /usr/bin/codesign
+          # Extract the public cert for trust and trust it
+          openssl pkcs12 -in /tmp/cert.p12 -passin pass:"$CERTIFICATE_PASSWORD" -clcerts -nokeys -legacy -out /tmp/cert.pem
           sudo security add-trusted-cert -d -r trustRoot -k /tmp/build.keychain /tmp/cert.pem
           security set-key-partition-list -S apple-tool:,apple: -s -k "" /tmp/build.keychain
 
-          # Get the SHA-1 hash of the signing identity (more reliable than name matching)
+          # Get the SHA-1 hash of the signing identity
           IDENTITY=$(security find-identity -v -p codesigning /tmp/build.keychain | head -1 | awk '{print $2}')
           echo "CODESIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
           echo "Found identity: $IDENTITY"
+
+          # Clean up
+          rm -f /tmp/cert.p12 /tmp/cert.pem
 
       - name: Resolve packages
         run: xcodebuild -resolvePackageDependencies -project OpenWhisper/OpenWhisper.xcodeproj -scheme OpenWhisper
