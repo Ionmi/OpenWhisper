@@ -50,11 +50,9 @@ final class AppState {
     private var whisperLastCallbackTime: Date?
 
     // Streaming state
-    private var streamingTimer: Timer?
-    private var streamedText = ""
-    private var streamedWordCount = 0
+    private var streamingTask: Task<Void, Never>?
     private var isStreamTranscribing = false
-    private var lastStreamedSampleCount = 0
+    private let streamingManager = StreamingTranscriptionManager()
     private var detectedLanguage = ""
 
     // LLM state
@@ -75,13 +73,11 @@ final class AppState {
             return
         }
 
-        // Show pill immediately for responsiveness, before audio engine starts.
+        // Show pill immediately for responsiveness
         currentState = .recording
         errorMessage = nil
-        streamedText = ""
-        streamedWordCount = 0
+        streamingManager.reset()
         livePreviewText = ""
-        lastStreamedSampleCount = 0
         detectedLanguage = ""
         lastLLMInputText = ""
         hotkeyService?.isActive = true
@@ -100,7 +96,7 @@ final class AppState {
         }
     }
 
-    /// Confirm transcription — do a final transcription pass then paste/copy/save
+    /// Confirm transcription — final pass on unconfirmed tail, then paste/copy/save
     func confirmRecording() {
         guard currentState == .recording else { return }
         stopStreamingTranscription()
@@ -108,96 +104,111 @@ final class AppState {
         audioLevel = 0
         hotkeyService?.isActive = false
 
-        // Change state immediately so UI updates, but keep audio engine
-        // running briefly to flush any pending buffers.
         currentState = .transcribing
         livePreviewText = ""
         floatingRecorder?.showTranscribing()
 
         let language = settings.selectedLanguage
-        let streamCoverage = lastStreamedSampleCount
 
         Task {
-            // Let the audio engine keep recording for a short window so
-            // any in-flight buffers are delivered to the tap callback.
+            // Flush in-flight audio buffers before stopping the engine.
+            // The audio tap delivers at ~256-4096 sample intervals;
+            // 300ms ensures pending callbacks complete.
             try? await Task.sleep(for: .milliseconds(300))
 
             let audioSamples = audioCaptureService?.stopRecording() ?? []
 
             guard !audioSamples.isEmpty else {
                 floatingRecorder?.hide()
-                streamedText = ""
+                streamingManager.reset()
                 currentState = .idle
                 return
             }
 
             defer {
-                streamedText = ""
+                streamingManager.reset()
                 currentState = .idle
             }
 
-            var finalText = streamedText
+            // Final pass: transcribe only audio from the confirmed cursor onwards.
+            // This captures any words spoken after the last streaming pass.
+            let cursorSample = Int(streamingManager.confirmedEndSeconds * 16000)
+            let startSample = max(0, cursorSample - 8000) // 0.5s overlap
+            let clampedStart = min(startSample, audioSamples.count)
+            let tailSamples = Array(audioSamples.suffix(from: clampedStart))
 
-            // Skip the final Whisper pass if streaming already covered
-            // most of the audio (within 1s / 16000 samples). The streamed
-            // text is accurate enough and this saves the full inference.
-            let newSamples = audioSamples.count - streamCoverage
-            let needsFinalPass = streamedText.isEmpty || newSamples > 16000
+            var lastOutput: TranscriptionOutput? = nil
 
-            if needsFinalPass {
-                // 1. Filter audio through VAD if enabled
-                var processedSamples = audioSamples
+            if !tailSamples.isEmpty {
+                // Pad with silence so Whisper doesn't cut off the last word
+                let paddedSamples = tailSamples + [Float](repeating: 0, count: 8000) // 500ms at 16kHz
+
+                // Filter through VAD if enabled
+                var processedSamples = paddedSamples
                 if audioSettings.vadEnabled, let vad = voiceActivityDetector {
-                    let segments = vad.detectSpeechSegments(in: audioSamples, sampleRate: 16000)
+                    let segments = vad.detectSpeechSegments(in: paddedSamples, sampleRate: 16000)
                     if !segments.isEmpty {
-                        processedSamples = segments.flatMap { Array(audioSamples[$0.start..<min($0.end, audioSamples.count)]) }
+                        processedSamples = segments.flatMap {
+                            Array(paddedSamples[$0.start..<min($0.end, paddedSamples.count)])
+                        }
                     }
                 }
 
-                // 2. Pad with trailing silence so Whisper can properly
-                //    transcribe the very last words (avoids cut-off).
-                let silencePadding = [Float](repeating: 0, count: 4800) // 300ms at 16kHz
-                processedSamples += silencePadding
-
-                // 3. Final transcription of the complete audio for best accuracy
                 if let engine = transcriptionEngine {
                     do {
                         let output = try await engine.transcribe(
                             audioSamples: processedSamples,
                             language: language == "auto" ? nil : language
                         )
-                        detectedLanguage = output.detectedLanguage
-                        let cleaned = Self.cleanTranscription(output.text)
-                        if !cleaned.isEmpty {
-                            finalText = cleaned
+
+                        // Adjust timestamps relative to full buffer
+                        let offsetSeconds = Float(clampedStart) / 16000.0
+                        let adjustedWords = output.words.map { word in
+                            TranscriptionWord(
+                                word: word.word,
+                                start: word.start + offsetSeconds,
+                                end: word.end + offsetSeconds,
+                                probability: word.probability
+                            )
+                        }
+                        lastOutput = TranscriptionOutput(
+                            text: output.text,
+                            detectedLanguage: output.detectedLanguage,
+                            words: adjustedWords
+                        )
+
+                        if !output.detectedLanguage.isEmpty {
+                            detectedLanguage = output.detectedLanguage
                         }
                     } catch {
-                        // Fall back to last streamed text
+                        // Fall back to what streaming already confirmed
                     }
                 }
             }
 
-            finalText = Self.cleanTranscription(finalText)
+            // Finalize: accept remaining hypothesis + any final-pass words
+            streamingManager.finalize(lastOutput: lastOutput)
+
+            var finalText = AppState.cleanTranscription(streamingManager.confirmedText)
 
             guard !finalText.isEmpty else {
                 floatingRecorder?.hide()
                 return
             }
 
-            // 4. Check snippet match — if exact match, use snippet and skip processing
+            // Snippet matching
             if let snippetMatch = snippetAdapter?.match(finalText) {
                 finalText = snippetMatch
             } else {
-                // 5. Regex processing pipeline (dictionary, fillers, punctuation)
+                // Regex processing pipeline (dictionary, fillers, punctuation)
                 if let processor = textProcessor {
                     finalText = processor.process(finalText, language: language)
                 }
             }
 
-            // 6. LLM refinement — always run on the final transcription text.
+            // LLM refinement
             if llmSettings.isEnabled, llmAdapter?.isModelLoaded == true, let llmProcessor {
                 lastLLMInputText = ""
-
                 currentState = .processing
                 floatingRecorder?.showProcessing()
                 let textToRefine = finalText
@@ -210,7 +221,7 @@ final class AppState {
                 lastLLMInputText = ""
             }
 
-            // 7. Output — show confirmation now that all processing is done
+            // Output
             floatingRecorder?.showConfirmation()
             let result = TranscriptionResult(
                 text: finalText,
@@ -248,7 +259,7 @@ final class AppState {
 
         _ = audioCaptureService?.stopRecording()
 
-        streamedText = ""
+        streamingManager.reset()
         livePreviewText = ""
         currentState = .idle
         errorMessage = nil
@@ -257,16 +268,17 @@ final class AppState {
     // MARK: - Streaming Transcription
 
     private func startStreamingTranscription() {
-        streamingTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
+        streamingTask = Task { [weak self] in
+            while !Task.isCancelled {
                 self?.performStreamTranscription()
+                try? await Task.sleep(for: .milliseconds(300))
             }
         }
     }
 
     private func stopStreamingTranscription() {
-        streamingTimer?.invalidate()
-        streamingTimer = nil
+        streamingTask?.cancel()
+        streamingTask = nil
         isStreamTranscribing = false
     }
 
@@ -278,40 +290,58 @@ final class AppState {
         else { return }
 
         let samples = audioCaptureService.currentSamples()
-        guard samples.count > 8000, samples.count > lastStreamedSampleCount + 4800 else { return }
+
+        // Need at least 0.5s of audio (8000 samples at 16kHz)
+        guard samples.count > 8000 else { return }
+
+        // Only transcribe audio from the confirmed cursor onwards.
+        // This is the key optimization: we don't re-transcribe confirmed audio.
+        let cursorSample = Int(streamingManager.confirmedEndSeconds * 16000)
+        let startSample = max(0, cursorSample - 8000) // 0.5s overlap for context
+        let clampedStart = min(startSample, samples.count)
+        let samplesToTranscribe = Array(samples.suffix(from: clampedStart))
+
+        guard samplesToTranscribe.count > 4000 else { return }
 
         isStreamTranscribing = true
-        lastStreamedSampleCount = samples.count
         let language = settings.selectedLanguage
 
         Task {
+            defer { isStreamTranscribing = false }
+
             do {
                 let output = try await engine.transcribe(
-                    audioSamples: samples,
+                    audioSamples: samplesToTranscribe,
                     language: language == "auto" ? nil : language
                 )
-                detectedLanguage = output.detectedLanguage
 
-                guard currentState == .recording else {
-                    isStreamTranscribing = false
-                    return
+                guard currentState == .recording else { return }
+
+                // Adjust word timestamps relative to the full buffer
+                let offsetSeconds = Float(clampedStart) / 16000.0
+                let adjustedWords = output.words.map { word in
+                    TranscriptionWord(
+                        word: word.word,
+                        start: word.start + offsetSeconds,
+                        end: word.end + offsetSeconds,
+                        probability: word.probability
+                    )
                 }
+                let adjustedOutput = TranscriptionOutput(
+                    text: output.text,
+                    detectedLanguage: output.detectedLanguage,
+                    words: adjustedWords
+                )
 
-                let cleaned = Self.cleanTranscription(output.text)
-                guard !cleaned.isEmpty else {
-                    isStreamTranscribing = false
-                    return
-                }
+                // Feed to LocalAgreement-2 manager
+                streamingManager.process(output: adjustedOutput)
+                detectedLanguage = streamingManager.detectedLanguage
 
-                // Always update the full streamed text with the latest transcription
-                streamedText = cleaned
-
-                // Update live preview (shown in pill if enabled)
-                livePreviewText = cleaned
+                // Update live preview
+                livePreviewText = streamingManager.currentText
             } catch {
                 // Silently ignore intermediate errors
             }
-            isStreamTranscribing = false
         }
     }
 
