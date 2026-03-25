@@ -51,9 +51,7 @@ final class AppState {
 
     // Streaming state
     private var streamingTask: Task<Void, Never>?
-    private var isStreamTranscribing = false
     private let streamingManager = StreamingTranscriptionManager()
-    private var detectedLanguage = ""
 
     // LLM state
     private var lastLLMInputText = ""
@@ -78,7 +76,6 @@ final class AppState {
         errorMessage = nil
         streamingManager.reset()
         livePreviewText = ""
-        detectedLanguage = ""
         lastLLMInputText = ""
         hotkeyService?.isActive = true
         floatingRecorder?.show()
@@ -111,9 +108,7 @@ final class AppState {
         let language = settings.selectedLanguage
 
         Task {
-            // Flush in-flight audio buffers before stopping the engine.
-            // The audio tap delivers at ~256-4096 sample intervals;
-            // 300ms ensures pending callbacks complete.
+            // Flush in-flight audio buffers (tap delivers at ~256-4096 sample intervals)
             try? await Task.sleep(for: .milliseconds(300))
 
             let audioSamples = audioCaptureService?.stopRecording() ?? []
@@ -130,63 +125,25 @@ final class AppState {
                 currentState = .idle
             }
 
-            // Final pass: transcribe only audio from the confirmed cursor onwards.
-            // This captures any words spoken after the last streaming pass.
-            let cursorSample = Int(streamingManager.confirmedEndSeconds * 16000)
-            let startSample = max(0, cursorSample - 8000) // 0.5s overlap
-            let clampedStart = min(startSample, audioSamples.count)
-            let tailSamples = Array(audioSamples.suffix(from: clampedStart))
-
+            // Final pass: transcribe only unconfirmed tail
+            let (tail, offset) = tailSamples(from: audioSamples)
             var lastOutput: TranscriptionOutput? = nil
 
-            if !tailSamples.isEmpty {
-                // Pad with silence so Whisper doesn't cut off the last word
-                let paddedSamples = tailSamples + [Float](repeating: 0, count: 8000) // 500ms at 16kHz
-
-                // Filter through VAD if enabled
-                var processedSamples = paddedSamples
+            if !tail.isEmpty {
+                var processedSamples = tail + [Float](repeating: 0, count: 8000) // 500ms silence pad
                 if audioSettings.vadEnabled, let vad = voiceActivityDetector {
-                    let segments = vad.detectSpeechSegments(in: paddedSamples, sampleRate: 16000)
+                    let segments = vad.detectSpeechSegments(in: processedSamples, sampleRate: 16000)
                     if !segments.isEmpty {
                         processedSamples = segments.flatMap {
-                            Array(paddedSamples[$0.start..<min($0.end, paddedSamples.count)])
+                            Array(processedSamples[$0.start..<min($0.end, processedSamples.count)])
                         }
                     }
                 }
-
                 if let engine = transcriptionEngine {
-                    do {
-                        let output = try await engine.transcribe(
-                            audioSamples: processedSamples,
-                            language: language == "auto" ? nil : language
-                        )
-
-                        // Adjust timestamps relative to full buffer
-                        let offsetSeconds = Float(clampedStart) / 16000.0
-                        let adjustedWords = output.words.map { word in
-                            TranscriptionWord(
-                                word: word.word,
-                                start: word.start + offsetSeconds,
-                                end: word.end + offsetSeconds,
-                                probability: word.probability
-                            )
-                        }
-                        lastOutput = TranscriptionOutput(
-                            text: output.text,
-                            detectedLanguage: output.detectedLanguage,
-                            words: adjustedWords
-                        )
-
-                        if !output.detectedLanguage.isEmpty {
-                            detectedLanguage = output.detectedLanguage
-                        }
-                    } catch {
-                        // Fall back to what streaming already confirmed
-                    }
+                    lastOutput = try? await transcribeTail(engine: engine, samples: processedSamples, language: language, offsetSeconds: offset)
                 }
             }
 
-            // Finalize: accept remaining hypothesis + any final-pass words
             streamingManager.finalize(lastOutput: lastOutput)
 
             var finalText = AppState.cleanTranscription(streamingManager.confirmedText)
@@ -196,24 +153,21 @@ final class AppState {
                 return
             }
 
-            // Snippet matching
+            // Post-processing pipeline
             if let snippetMatch = snippetAdapter?.match(finalText) {
                 finalText = snippetMatch
-            } else {
-                // Regex processing pipeline (dictionary, fillers, punctuation)
-                if let processor = textProcessor {
-                    finalText = processor.process(finalText, language: language)
-                }
+            } else if let processor = textProcessor {
+                finalText = processor.process(finalText, language: language)
             }
 
             // LLM refinement
+            let detLang = streamingManager.detectedLanguage
             if llmSettings.isEnabled, llmAdapter?.isModelLoaded == true, let llmProcessor {
                 lastLLMInputText = ""
                 currentState = .processing
                 floatingRecorder?.showProcessing()
-                let textToRefine = finalText
-                let llmLang = detectedLanguage.isEmpty ? language : detectedLanguage
-                if let refined = try? await llmProcessor.process(textToRefine, language: llmLang),
+                let llmLang = detLang.isEmpty ? language : detLang
+                if let refined = try? await llmProcessor.process(finalText, language: llmLang),
                    !refined.isEmpty {
                     finalText = refined
                 }
@@ -270,7 +224,7 @@ final class AppState {
     private func startStreamingTranscription() {
         streamingTask = Task { [weak self] in
             while !Task.isCancelled {
-                self?.performStreamTranscription()
+                await self?.performStreamTranscription()
                 try? await Task.sleep(for: .milliseconds(300))
             }
         }
@@ -279,70 +233,62 @@ final class AppState {
     private func stopStreamingTranscription() {
         streamingTask?.cancel()
         streamingTask = nil
-        isStreamTranscribing = false
     }
 
-    private func performStreamTranscription() {
+    private func performStreamTranscription() async {
         guard currentState == .recording,
-              !isStreamTranscribing,
               let engine = transcriptionEngine,
               let audioCaptureService
         else { return }
 
         let samples = audioCaptureService.currentSamples()
-
-        // Need at least 0.5s of audio (8000 samples at 16kHz)
         guard samples.count > 8000 else { return }
 
-        // Only transcribe audio from the confirmed cursor onwards.
-        // This is the key optimization: we don't re-transcribe confirmed audio.
-        let cursorSample = Int(streamingManager.confirmedEndSeconds * 16000)
-        let startSample = max(0, cursorSample - 8000) // 0.5s overlap for context
-        let clampedStart = min(startSample, samples.count)
-        let samplesToTranscribe = Array(samples.suffix(from: clampedStart))
+        let (tail, offset) = tailSamples(from: samples)
+        guard tail.count > 4000 else { return }
 
-        guard samplesToTranscribe.count > 4000 else { return }
-
-        isStreamTranscribing = true
         let language = settings.selectedLanguage
 
-        Task {
-            defer { isStreamTranscribing = false }
+        do {
+            let output = try await transcribeTail(engine: engine, samples: tail, language: language, offsetSeconds: offset)
+            guard currentState == .recording else { return }
 
-            do {
-                let output = try await engine.transcribe(
-                    audioSamples: samplesToTranscribe,
-                    language: language == "auto" ? nil : language
-                )
+            streamingManager.process(output: output)
 
-                guard currentState == .recording else { return }
-
-                // Adjust word timestamps relative to the full buffer
-                let offsetSeconds = Float(clampedStart) / 16000.0
-                let adjustedWords = output.words.map { word in
-                    TranscriptionWord(
-                        word: word.word,
-                        start: word.start + offsetSeconds,
-                        end: word.end + offsetSeconds,
-                        probability: word.probability
-                    )
-                }
-                let adjustedOutput = TranscriptionOutput(
-                    text: output.text,
-                    detectedLanguage: output.detectedLanguage,
-                    words: adjustedWords
-                )
-
-                // Feed to LocalAgreement-2 manager
-                streamingManager.process(output: adjustedOutput)
-                detectedLanguage = streamingManager.detectedLanguage
-
-                // Update live preview
-                livePreviewText = streamingManager.currentText
-            } catch {
-                // Silently ignore intermediate errors
+            let preview = streamingManager.currentText
+            if livePreviewText != preview {
+                livePreviewText = preview
             }
+        } catch {
+            // Silently ignore intermediate errors
         }
+    }
+
+    // MARK: - Helpers
+
+    /// Extract unconfirmed tail samples with 0.5s overlap for context.
+    private func tailSamples(from samples: [Float]) -> (samples: [Float], offsetSeconds: Float) {
+        let cursorSample = Int(streamingManager.confirmedEndSeconds * 16000)
+        let startSample = max(0, cursorSample - 8000)
+        let clamped = min(startSample, samples.count)
+        return (Array(samples.suffix(from: clamped)), Float(clamped) / 16000.0)
+    }
+
+    /// Transcribe samples and adjust word timestamps by offset.
+    private func transcribeTail(engine: any TranscriptionPort, samples: [Float], language: String, offsetSeconds: Float) async throws -> TranscriptionOutput {
+        let output = try await engine.transcribe(
+            audioSamples: samples,
+            language: language == "auto" ? nil : language
+        )
+        let adjustedWords = output.words.map { word in
+            TranscriptionWord(
+                word: word.word,
+                start: word.start + offsetSeconds,
+                end: word.end + offsetSeconds,
+                probability: word.probability
+            )
+        }
+        return TranscriptionOutput(text: output.text, detectedLanguage: output.detectedLanguage, words: adjustedWords)
     }
 
     // MARK: - Text Cleaning
