@@ -52,6 +52,8 @@ final class WhisperKitEngine: TranscriptionPort, @unchecked Sendable {
         if let language {
             options.language = language
         }
+        options.wordTimestamps = true
+        options.chunkingStrategy = ChunkingStrategy.none
 
         let results = try await kit.transcribe(
             audioArray: audioSamples,
@@ -65,9 +67,20 @@ final class WhisperKitEngine: TranscriptionPort, @unchecked Sendable {
 
         let detectedLanguage = results.first?.language ?? language ?? "en"
 
+        let words: [TranscriptionWord] = results.flatMap { result in
+            result.allWords.map { wt in
+                TranscriptionWord(
+                    word: wt.word,
+                    start: wt.start,
+                    end: wt.end,
+                    probability: wt.probability
+                )
+            }
+        }
+
         if text.isEmpty {
             throw TranscriptionError.transcriptionFailed("No speech detected.")
         }
-        return TranscriptionOutput(text: text, detectedLanguage: detectedLanguage)
+        return TranscriptionOutput(text: text, detectedLanguage: detectedLanguage, words: words)
     }
 }

@@ -17,9 +17,17 @@ enum TranscriptionError: LocalizedError {
     }
 }
 
-struct TranscriptionOutput {
+struct TranscriptionWord: Sendable {
+    let word: String
+    let start: Float
+    let end: Float
+    let probability: Float
+}
+
+struct TranscriptionOutput: Sendable {
     let text: String
     let detectedLanguage: String
+    let words: [TranscriptionWord]
 }
 
 protocol TranscriptionPort: Sendable {
