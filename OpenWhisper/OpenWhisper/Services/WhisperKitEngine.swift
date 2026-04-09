@@ -17,18 +17,29 @@ final class WhisperKitEngine: TranscriptionPort, @unchecked Sendable {
             _isModelLoaded = false
         }
 
-        // Step 1: Download (or verify cached) with progress reporting.
-        // WhisperKit.download() checks local cache and only fetches missing files.
-        let modelFolder = try await WhisperKit.download(
-            variant: name,
-            downloadBase: Constants.modelsDirectory,
-            progressCallback: { progress in
-                let speed = progress.userInfo[.throughputKey] as? Double
-                progressHandler?(progress.fractionCompleted, speed)
-            }
-        )
+        let localModelFolder = Constants.modelsDirectory
+            .appendingPathComponent("models")
+            .appendingPathComponent("argmaxinc")
+            .appendingPathComponent("whisperkit-coreml")
+            .appendingPathComponent("openai_whisper-\(name)")
 
-        // Step 2: Load the already-downloaded model.
+        let modelFolder: URL
+        if FileManager.default.fileExists(atPath: localModelFolder.path) {
+            // Model already downloaded — skip network verification.
+            modelFolder = localModelFolder
+        } else {
+            // Download with progress reporting.
+            modelFolder = try await WhisperKit.download(
+                variant: name,
+                downloadBase: Constants.modelsDirectory,
+                progressCallback: { progress in
+                    let speed = progress.userInfo[.throughputKey] as? Double
+                    progressHandler?(progress.fractionCompleted, speed)
+                }
+            )
+        }
+
+        // Load the model from disk.
         let kit = try await WhisperKit(
             modelFolder: modelFolder.path,
             verbose: false,
