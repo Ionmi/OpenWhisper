@@ -52,7 +52,7 @@ final class WhisperKitEngine: TranscriptionPort, @unchecked Sendable {
         }
     }
 
-    func transcribe(audioSamples: [Float], language: String?) async throws -> TranscriptionOutput {
+    func transcribe(audioSamples: [Float], language: String?, clipTimestamps: [Float] = [], prefixTokens: [Int]? = nil) async throws -> TranscriptionOutput {
         let kit = lock.withLock { whisperKit }
 
         guard let kit else {
@@ -65,6 +65,12 @@ final class WhisperKitEngine: TranscriptionPort, @unchecked Sendable {
         }
         options.wordTimestamps = true
         options.chunkingStrategy = ChunkingStrategy.none
+        if !clipTimestamps.isEmpty {
+            options.clipTimestamps = clipTimestamps
+        }
+        if let prefixTokens, !prefixTokens.isEmpty {
+            options.prefixTokens = prefixTokens
+        }
 
         let results = try await kit.transcribe(
             audioArray: audioSamples,
@@ -84,7 +90,8 @@ final class WhisperKitEngine: TranscriptionPort, @unchecked Sendable {
                     word: wt.word,
                     start: wt.start,
                     end: wt.end,
-                    probability: wt.probability
+                    probability: wt.probability,
+                    tokens: wt.tokens
                 )
             }
         }

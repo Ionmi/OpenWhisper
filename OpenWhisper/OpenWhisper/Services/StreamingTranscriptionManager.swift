@@ -1,112 +1,155 @@
 import Foundation
 
-/// Implements the LocalAgreement-2 streaming policy for real-time transcription.
+/// Implements eager-mode streaming transcription based on WhisperKit's approach.
 ///
-/// Algorithm (from UFAL "Turning Whisper into Real-Time Transcription"):
-/// 1. Each transcription pass produces a list of hypothesis words with timestamps.
-/// 2. Compare current hypothesis with previous hypothesis.
-/// 3. The longest common prefix (by word text) becomes "confirmed" — stable output.
-/// 4. The audio cursor advances to the end of the last confirmed word.
-/// 5. On finalize, the remaining hypothesis is accepted as confirmed.
-///
-/// Key invariant: `previousHypothesis` always stores ONLY the unconfirmed
-/// portion of the last pass (not confirmed words). This ensures alignment
-/// with the next pass, which starts from the confirmed audio cursor.
+/// Algorithm:
+/// 1. Each pass transcribes the full audio with `clipTimestamps` and `prefixTokens`.
+/// 2. Filter words to those starting at or after `lastAgreedSeconds`.
+/// 3. Compare with previous hypothesis via longest common prefix.
+/// 4. When the common prefix has enough words (≥ confirmationsNeeded),
+///    confirm all but the last `confirmationsNeeded` words.
+/// 5. The last `confirmationsNeeded` agreed words become the anchor for the next pass.
+/// 6. On finalize, accept the remaining hypothesis.
 @MainActor
 final class StreamingTranscriptionManager {
 
     private(set) var confirmedWords: [TranscriptionWord] = []
     private(set) var hypothesisWords: [TranscriptionWord] = []
 
-    /// Stores only the UNCONFIRMED tail from the previous pass.
-    /// Keeps alignment with subsequent passes that start from the confirmed cursor.
-    private var previousHypothesis: [TranscriptionWord] = []
+    /// The last N agreed words used as anchor for the next pass.
+    private(set) var lastAgreedWords: [TranscriptionWord] = []
 
-    /// Audio before this point does not need re-transcription.
-    private(set) var confirmedEndSeconds: Float = 0
+    /// Audio timestamp of the first agreed anchor word.
+    private(set) var lastAgreedSeconds: Float = 0
     private(set) var detectedLanguage: String = ""
 
-    /// Cached confirmed text — appended to when words are promoted, avoids
-    /// rebuilding from the full array on every access.
+    /// Previous pass words (filtered to >= lastAgreedSeconds).
+    private var prevWords: [TranscriptionWord] = []
+
+    /// How many agreed words to keep as an uncommitted buffer.
+    private let confirmationsNeeded: Int = 2
+
+    /// Cached confirmed text.
     private var cachedConfirmedText = ""
 
     // MARK: - Computed
 
     var currentText: String {
+        let confirmed = cachedConfirmedText
+        let anchor = lastAgreedWords.map(\.word).joined()
         let hypothesis = hypothesisWords.map(\.word).joined()
-        return (cachedConfirmedText + hypothesis).trimmingCharacters(in: .whitespacesAndNewlines)
+        return (confirmed + anchor + hypothesis).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     var confirmedText: String {
-        cachedConfirmedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let anchor = lastAgreedWords.map(\.word).joined()
+        return (cachedConfirmedText + anchor).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Tokens from the last agreed words — feed these as `prefixTokens` to the next pass.
+    var prefixTokens: [Int] {
+        lastAgreedWords.flatMap(\.tokens)
+    }
+
+    /// The timestamp to pass as `clipTimestamps` for the next transcription pass.
+    var clipTimestamp: Float {
+        lastAgreedSeconds
     }
 
     // MARK: - Processing
 
     func process(output: TranscriptionOutput) {
         detectedLanguage = output.detectedLanguage
-        let newWords = output.words
+
+        // Filter words to those at or after the agreed anchor point.
+        let newWords = output.words.filter { $0.start >= lastAgreedSeconds }
 
         guard !newWords.isEmpty else {
             hypothesisWords = []
             return
         }
 
-        let prefixLength = longestCommonPrefix(previousHypothesis, newWords)
+        let commonPrefix = longestCommonPrefix(prevWords, newWords)
 
-        if prefixLength > 0 {
-            let agreedWords = Array(newWords.prefix(prefixLength))
-            confirmWords(agreedWords)
-            hypothesisWords = Array(newWords.dropFirst(prefixLength))
+        if commonPrefix.count >= confirmationsNeeded {
+            // Promote all but the last N agreed words to confirmed.
+            let toConfirm = Array(commonPrefix.prefix(commonPrefix.count - confirmationsNeeded))
+            confirmWords(toConfirm)
+
+            // Keep last N as the anchor for the next pass.
+            lastAgreedWords = Array(commonPrefix.suffix(confirmationsNeeded))
+            lastAgreedSeconds = lastAgreedWords.first!.start
+
+            // Hypothesis is everything after the common prefix.
+            hypothesisWords = Array(newWords.dropFirst(commonPrefix.count))
         } else {
+            // Not enough agreement — keep showing as hypothesis, don't advance anchor.
             hypothesisWords = newWords
         }
 
-        // Next pass starts from confirmedEndSeconds, so only store unconfirmed tail.
-        previousHypothesis = Array(newWords.dropFirst(prefixLength))
+        prevWords = newWords
     }
 
     /// Accept remaining hypothesis when the user stops recording.
     func finalize(lastOutput: TranscriptionOutput?) {
+        let wordsToFinalize: [TranscriptionWord]
         if let lastOutput, !lastOutput.words.isEmpty {
-            let finalWords = lastOutput.words
-            // The last pass re-transcribes from confirmedEndSeconds (with overlap).
-            // Filter out words whose timestamps fall within already-confirmed audio
-            // to avoid duplicating words near the boundary.
-            let cursor = confirmedEndSeconds
-            let newWords = finalWords.filter { $0.end > cursor }
-            confirmWords(newWords)
+            wordsToFinalize = lastOutput.words.filter { $0.start >= lastAgreedSeconds }
         } else {
-            confirmWords(hypothesisWords)
+            wordsToFinalize = lastAgreedWords + hypothesisWords
         }
 
+        // Deduplicate against already-confirmed words before finalizing.
+        let deduped = deduplicateAgainstConfirmed(wordsToFinalize)
+        confirmWords(deduped)
+
+        // Clear anchor words since they were just confirmed via deduped.
+        lastAgreedWords = []
         hypothesisWords = []
-        previousHypothesis = []
+        prevWords = []
     }
 
     func reset() {
         confirmedWords = []
         hypothesisWords = []
-        previousHypothesis = []
-        confirmedEndSeconds = 0
+        lastAgreedWords = []
+        prevWords = []
+        lastAgreedSeconds = 0
         detectedLanguage = ""
         cachedConfirmedText = ""
     }
+
+    // MARK: - Private
 
     private func confirmWords(_ words: [TranscriptionWord]) {
         guard !words.isEmpty else { return }
         confirmedWords.append(contentsOf: words)
         cachedConfirmedText += words.map(\.word).joined()
-        if let last = words.last {
-            confirmedEndSeconds = last.end
+    }
+
+    /// Remove leading words that duplicate the tail of already-confirmed words (UFAL approach).
+    private func deduplicateAgainstConfirmed(_ words: [TranscriptionWord]) -> [TranscriptionWord] {
+        guard !words.isEmpty, !confirmedWords.isEmpty else { return words }
+
+        var result = words
+        let maxCheck = min(5, min(confirmedWords.count, result.count))
+
+        for n in stride(from: maxCheck, through: 1, by: -1) {
+            let confirmedTail = confirmedWords.suffix(n).map { normalizeWord($0.word) }
+            let newHead = result.prefix(n).map { normalizeWord($0.word) }
+
+            if confirmedTail == Array(newHead) {
+                result = Array(result.dropFirst(n))
+                break
+            }
         }
+
+        return result
     }
 
     // MARK: - LocalAgreement
 
-    /// Find the longest common prefix between two word sequences.
-    /// Words match by normalized text (trimmed, lowercased, punctuation stripped).
-    private func longestCommonPrefix(_ a: [TranscriptionWord], _ b: [TranscriptionWord]) -> Int {
+    private func longestCommonPrefix(_ a: [TranscriptionWord], _ b: [TranscriptionWord]) -> [TranscriptionWord] {
         let limit = min(a.count, b.count)
         var length = 0
         for i in 0..<limit {
@@ -116,18 +159,12 @@ final class StreamingTranscriptionManager {
                 break
             }
         }
-        return length
+        return Array(b.prefix(length))
     }
 
-    /// Normalize a word for comparison.
-    /// WhisperKit may attach punctuation differently between passes
-    /// (e.g., "hello," vs "hello"), so strip trailing punctuation.
     private func normalizeWord(_ word: String) -> String {
-        var w = word.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        // Strip trailing punctuation for more robust matching
-        while let last = w.last, last.isPunctuation {
-            w.removeLast()
-        }
-        return w
+        word.trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .filter { !$0.isPunctuation }
     }
 }

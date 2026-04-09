@@ -22,6 +22,7 @@ struct TranscriptionWord: Sendable {
     let start: Float
     let end: Float
     let probability: Float
+    let tokens: [Int]
 }
 
 struct TranscriptionOutput: Sendable {
@@ -32,12 +33,16 @@ struct TranscriptionOutput: Sendable {
 
 protocol TranscriptionPort: Sendable {
     func loadModel(name: String, progressHandler: ((Double, Double?) -> Void)?) async throws
-    func transcribe(audioSamples: [Float], language: String?) async throws -> TranscriptionOutput
+    func transcribe(audioSamples: [Float], language: String?, clipTimestamps: [Float], prefixTokens: [Int]?) async throws -> TranscriptionOutput
     var isModelLoaded: Bool { get }
 }
 
 extension TranscriptionPort {
     func loadModel(name: String) async throws {
         try await loadModel(name: name, progressHandler: nil)
+    }
+
+    func transcribe(audioSamples: [Float], language: String?) async throws -> TranscriptionOutput {
+        try await transcribe(audioSamples: audioSamples, language: language, clipTimestamps: [], prefixTokens: nil)
     }
 }

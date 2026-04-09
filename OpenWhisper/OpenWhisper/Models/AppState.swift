@@ -125,23 +125,16 @@ final class AppState {
                 currentState = .idle
             }
 
-            // Final pass: transcribe only unconfirmed tail
-            let (tail, offset) = tailSamples(from: audioSamples)
+            // Final pass: transcribe full audio with clipTimestamps from the agreed anchor.
             var lastOutput: TranscriptionOutput? = nil
 
-            if !tail.isEmpty {
-                var processedSamples = tail + [Float](repeating: 0, count: 8000) // 500ms silence pad
-                if audioSettings.vadEnabled, let vad = voiceActivityDetector {
-                    let segments = vad.detectSpeechSegments(in: processedSamples, sampleRate: 16000)
-                    if !segments.isEmpty {
-                        processedSamples = segments.flatMap {
-                            Array(processedSamples[$0.start..<min($0.end, processedSamples.count)])
-                        }
-                    }
-                }
-                if let engine = transcriptionEngine {
-                    lastOutput = try? await transcribeTail(engine: engine, samples: processedSamples, language: language, offsetSeconds: offset)
-                }
+            if let engine = transcriptionEngine {
+                lastOutput = try? await engine.transcribe(
+                    audioSamples: audioSamples,
+                    language: language == "auto" ? nil : language,
+                    clipTimestamps: [streamingManager.clipTimestamp],
+                    prefixTokens: streamingManager.prefixTokens.isEmpty ? nil : streamingManager.prefixTokens
+                )
             }
 
             streamingManager.finalize(lastOutput: lastOutput)
@@ -244,13 +237,15 @@ final class AppState {
         let samples = audioCaptureService.currentSamples()
         guard samples.count > 8000 else { return }
 
-        let (tail, offset) = tailSamples(from: samples)
-        guard tail.count > 4000 else { return }
-
         let language = settings.selectedLanguage
 
         do {
-            let output = try await transcribeTail(engine: engine, samples: tail, language: language, offsetSeconds: offset)
+            let output = try await engine.transcribe(
+                audioSamples: samples,
+                language: language == "auto" ? nil : language,
+                clipTimestamps: [streamingManager.clipTimestamp],
+                prefixTokens: streamingManager.prefixTokens.isEmpty ? nil : streamingManager.prefixTokens
+            )
             guard currentState == .recording else { return }
 
             streamingManager.process(output: output)
@@ -262,33 +257,6 @@ final class AppState {
         } catch {
             // Silently ignore intermediate errors
         }
-    }
-
-    // MARK: - Helpers
-
-    /// Extract unconfirmed tail samples with 0.5s overlap for context.
-    private func tailSamples(from samples: [Float]) -> (samples: [Float], offsetSeconds: Float) {
-        let cursorSample = Int(streamingManager.confirmedEndSeconds * 16000)
-        let startSample = max(0, cursorSample - 8000)
-        let clamped = min(startSample, samples.count)
-        return (Array(samples.suffix(from: clamped)), Float(clamped) / 16000.0)
-    }
-
-    /// Transcribe samples and adjust word timestamps by offset.
-    private func transcribeTail(engine: any TranscriptionPort, samples: [Float], language: String, offsetSeconds: Float) async throws -> TranscriptionOutput {
-        let output = try await engine.transcribe(
-            audioSamples: samples,
-            language: language == "auto" ? nil : language
-        )
-        let adjustedWords = output.words.map { word in
-            TranscriptionWord(
-                word: word.word,
-                start: word.start + offsetSeconds,
-                end: word.end + offsetSeconds,
-                probability: word.probability
-            )
-        }
-        return TranscriptionOutput(text: output.text, detectedLanguage: output.detectedLanguage, words: adjustedWords)
     }
 
     // MARK: - Text Cleaning
