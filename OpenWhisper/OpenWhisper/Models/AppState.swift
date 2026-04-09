@@ -322,7 +322,46 @@ final class AppState {
             }
         }
 
+        // Remove consecutive repeated n-grams (Whisper hallucination artifact).
+        // Handles "llamado llamado", "tiene más tiene más", etc.
+        result = removeConsecutiveRepeats(result)
+
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Detects and removes consecutively repeated word sequences (1–4 word n-grams).
+    private static func removeConsecutiveRepeats(_ text: String) -> String {
+        let words = text.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
+        guard words.count >= 2 else { return text }
+
+        var cleaned: [String] = []
+        var i = 0
+        while i < words.count {
+            var matched = false
+            // Try n-gram sizes from 4 down to 1
+            for n in stride(from: min(4, (words.count - i) / 2), through: 1, by: -1) {
+                let end = i + n
+                let repeatEnd = end + n
+                guard repeatEnd <= words.count else { continue }
+
+                let gram = words[i..<end].map { $0.lowercased() }
+                let next = words[end..<repeatEnd].map { $0.lowercased() }
+
+                if gram == next {
+                    // Keep the first occurrence, skip the duplicate
+                    cleaned.append(contentsOf: words[i..<end])
+                    i = repeatEnd
+                    matched = true
+                    break
+                }
+            }
+            if !matched {
+                cleaned.append(words[i])
+                i += 1
+            }
+        }
+
+        return cleaned.joined(separator: " ")
     }
 
     // MARK: - Audio Level
