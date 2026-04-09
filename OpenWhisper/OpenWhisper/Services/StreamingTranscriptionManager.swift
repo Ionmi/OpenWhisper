@@ -70,9 +70,12 @@ final class StreamingTranscriptionManager {
     func finalize(lastOutput: TranscriptionOutput?) {
         if let lastOutput, !lastOutput.words.isEmpty {
             let finalWords = lastOutput.words
-            let prefixLength = longestCommonPrefix(previousHypothesis, finalWords)
-            // Final pass supersedes any prior hypothesis — accept all words.
-            confirmWords(Array(finalWords))
+            // The last pass re-transcribes from confirmedEndSeconds (with overlap).
+            // Filter out words whose timestamps fall within already-confirmed audio
+            // to avoid duplicating words near the boundary.
+            let cursor = confirmedEndSeconds
+            let newWords = finalWords.filter { $0.end > cursor }
+            confirmWords(newWords)
         } else {
             confirmWords(hypothesisWords)
         }
