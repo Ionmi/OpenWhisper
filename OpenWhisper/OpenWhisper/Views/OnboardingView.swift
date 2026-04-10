@@ -59,6 +59,7 @@ struct OnboardingView: View {
         switch currentStep {
         case 1:
             return appState.permissionsManager.hasMicrophonePermission
+                && appState.permissionsManager.hasAccessibilityPermission
         case 2:
             return appState.isModelLoaded
         default:

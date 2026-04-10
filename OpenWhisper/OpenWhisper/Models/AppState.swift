@@ -61,6 +61,12 @@ final class AppState {
     func startRecording() {
         guard currentState == .idle else { return }
 
+        permissionsManager.checkMicrophonePermission()
+        guard permissionsManager.hasMicrophonePermission else {
+            errorMessage = "Microphone permission is required to start recording. Grant access in Settings."
+            return
+        }
+
         guard let audioCaptureService else {
             errorMessage = "Audio service not initialized. Try restarting the app."
             return
