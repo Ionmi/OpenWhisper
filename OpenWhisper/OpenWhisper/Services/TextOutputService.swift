@@ -49,7 +49,7 @@ final class TextOutputService {
 
     func pasteText(_ text: String) {
         let pasteboard = NSPasteboard.general
-        let previousContents = pasteboard.string(forType: .string)
+        let previousContents = snapshotPasteboardItems(from: pasteboard)
 
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
@@ -59,12 +59,29 @@ final class TextOutputService {
 
             // Restore previous clipboard after target app has time to read it
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                if let previous = previousContents {
-                    pasteboard.clearContents()
-                    pasteboard.setString(previous, forType: .string)
-                }
+                self.restorePasteboard(previousContents, to: pasteboard)
             }
         }
+    }
+
+    private func snapshotPasteboardItems(from pasteboard: NSPasteboard) -> [NSPasteboardItem] {
+        (pasteboard.pasteboardItems ?? []).map { item in
+            let copy = NSPasteboardItem()
+            for type in item.types {
+                if let data = item.data(forType: type) {
+                    copy.setData(data, forType: type)
+                } else if let string = item.string(forType: type) {
+                    copy.setString(string, forType: type)
+                }
+            }
+            return copy
+        }
+    }
+
+    private func restorePasteboard(_ items: [NSPasteboardItem], to pasteboard: NSPasteboard) {
+        pasteboard.clearContents()
+        guard !items.isEmpty else { return }
+        pasteboard.writeObjects(items)
     }
 
     private func simulatePaste() {

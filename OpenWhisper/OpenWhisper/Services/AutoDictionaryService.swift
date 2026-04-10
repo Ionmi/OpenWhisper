@@ -16,15 +16,20 @@ final class AutoDictionaryService {
     private var dictionaryAdapter: DictionaryPort?
     private var monitorTimer: Timer?
     private var initialClipboardContent: String = ""
+    private var ignoredClipboardContents: Set<String> = []
     private var lastChangeCount: Int = 0
 
     func configure(dictionaryAdapter: DictionaryPort) {
         self.dictionaryAdapter = dictionaryAdapter
     }
 
-    func startMonitoring(transcribedText: String) {
+    func startMonitoring(transcribedText: String, ignoredClipboardContents: Set<String> = []) {
         lastTranscribedText = transcribedText
         stopMonitoring()
+        self.ignoredClipboardContents = Set(
+            ignoredClipboardContents.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        )
 
         let pasteboard = NSPasteboard.general
         initialClipboardContent = pasteboard.string(forType: .string) ?? ""
@@ -59,7 +64,8 @@ final class AutoDictionaryService {
             .trimmingCharacters(in: .whitespacesAndNewlines),
               !newContent.isEmpty,
               newContent.count < 50,
-              newContent != initialClipboardContent else {
+              newContent != initialClipboardContent,
+              !ignoredClipboardContents.contains(newContent) else {
             return
         }
 
@@ -106,6 +112,7 @@ final class AutoDictionaryService {
     func stopMonitoring() {
         monitorTimer?.invalidate()
         monitorTimer = nil
+        ignoredClipboardContents = []
     }
 
     func acceptSuggestion() {

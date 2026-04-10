@@ -202,11 +202,10 @@ final class AppState {
                 textOutputService?.pasteText(finalText)
             case .clipboardOnly:
                 textOutputService?.copyToClipboard(finalText)
+                autoDictionaryService?.startMonitoring(transcribedText: finalText)
             case .historyOnly:
                 break
             }
-
-            autoDictionaryService?.startMonitoring(transcribedText: finalText)
         }
     }
 
