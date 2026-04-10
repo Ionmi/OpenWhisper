@@ -121,12 +121,18 @@ final class AppState {
             // Flush in-flight audio buffers (tap delivers at ~256-4096 sample intervals)
             try? await Task.sleep(for: .milliseconds(300))
 
-            let audioSamples = audioCaptureService?.stopRecording() ?? []
+            let recordedAudioSamples = audioCaptureService?.stopRecording() ?? []
 
-            guard !audioSamples.isEmpty else {
+            guard !recordedAudioSamples.isEmpty else {
                 floatingRecorder?.hide()
                 streamingManager.reset()
                 currentState = .idle
+                return
+            }
+
+            let audioSamples = transcriptionSamples(from: recordedAudioSamples)
+            guard !audioSamples.isEmpty else {
+                floatingRecorder?.hide()
                 return
             }
 
@@ -183,7 +189,7 @@ final class AppState {
             let result = TranscriptionResult(
                 text: finalText,
                 timestamp: Date(),
-                duration: Double(audioSamples.count) / 16000.0
+                duration: Double(recordedAudioSamples.count) / 16000.0
             )
             lastTranscription = result
             transcriptionHistory.insert(result, at: 0)
@@ -244,7 +250,7 @@ final class AppState {
               let audioCaptureService
         else { return }
 
-        let samples = audioCaptureService.currentSamples()
+        let samples = transcriptionSamples(from: audioCaptureService.currentSamples())
         guard samples.count > 8000 else { return }
 
         let language = settings.selectedLanguage
@@ -340,6 +346,33 @@ final class AppState {
         }
 
         return cleaned.joined(separator: " ")
+    }
+
+    private func transcriptionSamples(from samples: [Float]) -> [Float] {
+        guard audioSettings.vadEnabled,
+              let voiceActivityDetector
+        else { return samples }
+
+        let segments = voiceActivityDetector.detectSpeechSegments(in: samples, sampleRate: 16_000)
+        guard !segments.isEmpty else {
+            return []
+        }
+
+        var filteredSamples: [Float] = []
+        filteredSamples.reserveCapacity(
+            segments.reduce(into: 0) { partialResult, segment in
+                partialResult += max(0, min(samples.count, segment.end) - max(0, segment.start))
+            }
+        )
+
+        for segment in segments {
+            let startIndex = max(0, segment.start)
+            let endIndex = min(samples.count, segment.end)
+            guard startIndex < endIndex else { continue }
+            filteredSamples.append(contentsOf: samples[startIndex..<endIndex])
+        }
+
+        return filteredSamples
     }
 
     // MARK: - Audio Level
