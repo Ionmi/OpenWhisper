@@ -62,19 +62,46 @@ final class RemoteLLMAdapter: LLMPort, @unchecked Sendable {
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
-            throw LLMError.generationFailed("HTTP error")
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw LLMError.generationFailed("Invalid HTTP response")
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let responseText = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let detail = remoteErrorDescription(from: data) ?? responseText?.prefix(300).description ?? "No response body"
+            throw LLMError.generationFailed("HTTP \(httpResponse.statusCode): \(detail)")
         }
 
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let choices = json["choices"] as? [[String: Any]],
               let message = choices.first?["message"] as? [String: Any],
               let content = message["content"] as? String else {
-            throw LLMError.generationFailed("Invalid response format")
+            let responseText = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "Unreadable response body"
+            throw LLMError.generationFailed("Invalid response format: \(String(responseText.prefix(300)))")
         }
 
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func remoteErrorDescription(from data: Data) -> String? {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+
+        if let error = json["error"] as? [String: Any] {
+            if let message = error["message"] as? String, !message.isEmpty {
+                return message
+            }
+            if let type = error["type"] as? String, !type.isEmpty {
+                return type
+            }
+        }
+
+        if let message = json["message"] as? String, !message.isEmpty {
+            return message
+        }
+
+        return nil
     }
 
     func warmUp(systemPrompt: String) async {
