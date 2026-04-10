@@ -61,7 +61,7 @@ struct OnboardingView: View {
             return appState.permissionsManager.hasMicrophonePermission
                 && appState.permissionsManager.hasAccessibilityPermission
         case 2:
-            return appState.isModelLoaded
+            return appState.hasSelectedModelLoaded
         default:
             return true
         }
@@ -287,7 +287,7 @@ struct OnboardingView: View {
                     Text("Downloading & loading model…")
                         .foregroundStyle(.secondary)
                 }
-            } else if appState.isModelLoaded {
+            } else if appState.hasSelectedModelLoaded {
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.green)

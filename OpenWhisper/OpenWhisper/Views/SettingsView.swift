@@ -436,7 +436,7 @@ struct ModelSettingsTab: View {
                     ForEach(familyModels) { model in
                         WhisperModelRow(
                             model: model,
-                            isActive: settings.selectedModel == model.id && appState.isModelLoaded,
+                            isActive: appState.loadedModelID == model.id && appState.isModelLoaded,
                             isCached: appState.modelManager.availableLocalModels.contains(model.id),
                             isRecommended: model.id == recommendedID,
                             isDownloadingThis: appState.isLoadingModel && settings.selectedModel == model.id,

@@ -57,7 +57,7 @@ struct MenuBarView: View {
                 .padding(.top, 2)
         }
 
-        if !appState.isModelLoaded {
+        if !appState.hasSelectedModelLoaded {
             if appState.isLoadingModel {
                 Text("Loading \(appState.settings.selectedModel)…")
                     .font(.subheadline)
@@ -159,7 +159,7 @@ struct MenuBarView: View {
     // MARK: - Helpers
 
     private var statusColor: Color {
-        if !appState.isModelLoaded && appState.currentState == .idle {
+        if !appState.hasSelectedModelLoaded && appState.currentState == .idle {
             return .gray
         }
         return switch appState.currentState {
@@ -174,7 +174,7 @@ struct MenuBarView: View {
         if appState.isLoadingModel {
             return String(localized: "Loading…")
         }
-        if !appState.isModelLoaded && appState.currentState == .idle {
+        if !appState.hasSelectedModelLoaded && appState.currentState == .idle {
             return String(localized: "No Model")
         }
         return switch appState.currentState {

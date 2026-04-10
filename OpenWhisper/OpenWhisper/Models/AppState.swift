@@ -9,6 +9,10 @@ final class AppState {
     var errorMessage: String?
     var isModelLoaded = false
     var isLoadingModel = false
+    var loadedModelID: String?
+    var hasSelectedModelLoaded: Bool {
+        isModelLoaded && loadedModelID == settings.selectedModel
+    }
     var modelLoadProgress: Double = 0
     var audioLevel: Float = 0
     var isLLMLoaded = false
@@ -72,8 +76,8 @@ final class AppState {
             return
         }
 
-        guard isModelLoaded else {
-            errorMessage = "No model loaded. Open Settings to download one."
+        guard hasSelectedModelLoaded else {
+            errorMessage = "No model loaded for the selected model. Open Settings to download or load it."
             return
         }
 
@@ -541,18 +545,20 @@ final class AppState {
 
     func loadTranscriptionEngine() async {
         guard !isLoadingModel else { return }
-        let modelID = settings.selectedModel
-        let totalBytes = (Constants.SupportedModels.all.first { $0.id == modelID }?.sizeGB ?? 1.0) * 1_000_000_000
+        let requestedModelID = settings.selectedModel
+        let totalBytes = (Constants.SupportedModels.all.first { $0.id == requestedModelID }?.sizeGB ?? 1.0) * 1_000_000_000
 
         let engine = WhisperKitEngine()
         do {
             isModelLoaded = false
             isLoadingModel = true
+            loadedModelID = nil
+            transcriptionEngine = nil
             modelLoadProgress = 0
             whisperDownloadedBytes = 0
             whisperLastCallbackTime = nil
             errorMessage = nil
-            try await engine.loadModel(name: modelID) { [weak self] _, speed in
+            try await engine.loadModel(name: requestedModelID) { [weak self] _, speed in
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     let now = Date()
@@ -564,21 +570,33 @@ final class AppState {
                     self.modelLoadProgress = self.whisperDownloadedBytes / totalBytes
                 }
             }
+
+            guard settings.selectedModel == requestedModelID else {
+                isLoadingModel = false
+                modelLoadProgress = 0
+                errorMessage = "Model selection changed while loading. Load the newly selected model to continue."
+                return
+            }
+
             transcriptionEngine = engine
+            loadedModelID = requestedModelID
             isModelLoaded = true
             modelLoadProgress = 1
             modelManager.refreshLocalModels()
             isLoadingModel = false
         } catch {
             errorMessage = "Failed to load model: \(error.localizedDescription)"
+            loadedModelID = nil
             isLoadingModel = false
             modelLoadProgress = 0
         }
     }
 
     func deleteWhisperModel(_ modelID: String) {
-        if settings.selectedModel == modelID {
+        if loadedModelID == modelID {
             isModelLoaded = false
+            loadedModelID = nil
+            transcriptionEngine = nil
         }
         try? modelManager.deleteModel(modelID)
     }
